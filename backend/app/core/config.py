@@ -1,0 +1,68 @@
+"""
+Application configuration.
+
+Uses pydantic-settings to load configuration from environment variables (or a .env file).
+All settings are typed and validated at startup — if a required value is missing or
+has the wrong type, the application will fail fast with a clear error message.
+
+Environment variables take precedence over .env file values.
+"""
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """
+    Central settings object loaded from environment variables.
+
+    All fields have sensible defaults for local development with Docker Compose.
+    In production (Railway/Vercel), override via the hosting platform's env vars.
+    """
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    # --- Database ---
+    # asyncpg driver for async I/O — never use the sync postgres:// URL here
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@db:5432/ticketai"
+
+    # --- Authentication ---
+    # SECRET_KEY: used to sign/verify JWT tokens. Must be ≥32 random chars in production.
+    SECRET_KEY: str = "change-me-in-production"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 days — long session for developer UX
+
+    # Google OAuth 2.0 credentials (from Google Cloud Console)
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    FRONTEND_URL: str = "http://localhost:3000"
+    BACKEND_URL: str = "http://localhost:8000"
+
+    # --- File Storage (S3-compatible via boto3) ---
+    # Local dev: MinIO container. Production: Cloudflare R2 (same boto3 code, different endpoint)
+    STORAGE_ENDPOINT: str = "http://minio:9000"
+    STORAGE_ACCESS_KEY: str = "minioadmin"
+    STORAGE_SECRET_KEY: str = "minioadmin"
+    STORAGE_BUCKET: str = "attachments"
+    STORAGE_REGION: str = "us-east-1"
+
+    # --- AI Agent ---
+    # Gemini 2.5 Flash by default (free tier: 500 req/day).
+    # Switch to "anthropic" + claude-haiku-4-5-20251001 for guaranteed reliability.
+    AI_PROVIDER: str = "google"  # "google" | "anthropic"
+    AI_MODEL: str = "gemini-2.5-flash"
+    GOOGLE_API_KEY: str = ""
+    ANTHROPIC_API_KEY: str = ""
+
+    # --- Business Rules ---
+    MAX_ATTACHMENT_SIZE_MB: int = 10
+    ALLOWED_MIME_TYPES: list[str] = [
+        "image/jpeg", "image/png", "image/gif", "image/webp",
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "text/plain",
+    ]
+
+
+# Singleton instance — import this in all modules that need settings
+settings = Settings()
