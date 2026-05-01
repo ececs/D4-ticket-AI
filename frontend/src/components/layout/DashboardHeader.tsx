@@ -19,11 +19,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { LogOut, User } from "lucide-react";
+import { LogOut, User, Bot } from "lucide-react";
 import useAuthStore from "@/stores/authStore";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { useNotifications } from "@/hooks/useNotifications";
+import { ChatSidebar } from "@/components/ai-chat/ChatSidebar";
 import api from "@/lib/api";
 
 interface DashboardHeaderProps {
@@ -35,6 +36,7 @@ export function DashboardHeader({ token }: DashboardHeaderProps) {
   const router = useRouter();
   const { user } = useAuthStore();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   // Initialise real-time connection — safe to call unconditionally (hook handles null token)
   useWebSocket(token);
@@ -48,6 +50,7 @@ export function DashboardHeader({ token }: DashboardHeaderProps) {
   };
 
   return (
+    <>
     <header className="bg-white border-b border-slate-200 px-6 py-3 sticky top-0 z-30">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         {/* Logo */}
@@ -58,6 +61,20 @@ export function DashboardHeader({ token }: DashboardHeaderProps) {
 
         {/* Right side: notifications + user */}
         <div className="flex items-center gap-2">
+          {/* AI Chat toggle */}
+          <button
+            onClick={() => setChatOpen((o) => !o)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              chatOpen
+                ? "bg-blue-600 text-white"
+                : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+            }`}
+            aria-label="Toggle AI assistant"
+          >
+            <Bot className="w-4 h-4" />
+            <span className="hidden sm:block">AI</span>
+          </button>
+
           <NotificationBell />
 
           {/* User avatar + dropdown */}
@@ -110,5 +127,9 @@ export function DashboardHeader({ token }: DashboardHeaderProps) {
         </div>
       </div>
     </header>
+
+    {/* Floating AI chat panel — rendered outside the header so it overlays page content */}
+    {chatOpen && <ChatSidebar onClose={() => setChatOpen(false)} />}
+  </>
   );
 }

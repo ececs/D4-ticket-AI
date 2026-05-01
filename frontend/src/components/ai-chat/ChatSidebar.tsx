@@ -1,0 +1,297 @@
+/**
+ * ChatSidebar — floating AI assistant panel.
+ *
+ * Architecture:
+ *  - Conversation history is stored in local component state (array of ChatMessage).
+ *  - On each user message, the full history is sent to POST /ai/chat.
+ *  - The response is an SSE stream: text tokens accumulate into the last
+ *    assistant message in real time; tool_call events are appended as actions.
+ *  - The panel can be toggled open/closed from the dashboard header.
+ *
+ * SSE parsing:
+ *  We use the native fetch() + ReadableStream API instead of EventSource because
+ *  EventSource only supports GET requests with no body. For POST + auth cookie,
+ *  fetch() with a text decoder is the correct approach.
+ *
+ * Why local state and not Zustand?
+ *  Chat history is session-scoped and page-local. There is no need to share it
+ *  across components, so local useState is simpler and more appropriate here.
+ */
+
+"use client";
+
+import { useState, useRef, useEffect, useCallback } from "react";
+import { X, Send, Bot, Loader2, Wrench } from "lucide-react";
+import { ChatMessage } from "@/types";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+interface ChatSidebarProps {
+  onClose: () => void;
+}
+
+export function ChatSidebar({ onClose }: ChatSidebarProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: "welcome",
+      role: "assistant",
+      content:
+        "Hi! I'm your AI assistant. I can help you manage tickets — create, search, update status, add comments, and reassign. What would you like to do?",
+      created_at: new Date().toISOString(),
+    },
+  ]);
+  const [input, setInput] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Auto-scroll to latest message
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const sendMessage = useCallback(async () => {
+    const text = input.trim();
+    if (!text || isStreaming) return;
+
+    setInput("");
+    setIsStreaming(true);
+
+    // Append user message
+    const userMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: text,
+      created_at: new Date().toISOString(),
+    };
+
+    // Placeholder for the assistant's streaming response
+    const assistantId = crypto.randomUUID();
+    const assistantMsg: ChatMessage = {
+      id: assistantId,
+      role: "assistant",
+      content: "",
+      actions: [],
+      created_at: new Date().toISOString(),
+    };
+
+    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+
+    // Build the conversation to send (exclude the empty placeholder we just added)
+    const historyToSend = [...messages, userMsg].map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    try {
+      abortRef.current = new AbortController();
+
+      const response = await fetch(`${API_URL}/api/v1/ai/chat`, {
+        method: "POST",
+        credentials: "include", // Send the auth cookie
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: historyToSend }),
+        signal: abortRef.current.signal,
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      // Parse the SSE stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE events are separated by double newlines
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? ""; // Keep any incomplete event in the buffer
+
+        for (const part of parts) {
+          const line = part.replace(/^data: /, "").trim();
+          if (!line) continue;
+
+          try {
+            const event = JSON.parse(line) as {
+              type: string;
+              content?: string;
+              name?: string;
+              result?: string;
+            };
+
+            if (event.type === "token" && event.content) {
+              // Append text token to the assistant message
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, content: m.content + event.content }
+                    : m
+                )
+              );
+            } else if (event.type === "tool_call" && event.name) {
+              // Append executed action to the actions list
+              const actionLabel = formatToolAction(event.name, event.result ?? "");
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, actions: [...(m.actions ?? []), actionLabel] }
+                    : m
+                )
+              );
+            } else if (event.type === "done") {
+              break;
+            }
+          } catch {
+            // Ignore malformed SSE events
+          }
+        }
+      }
+    } catch (err: unknown) {
+      if ((err as Error).name === "AbortError") return; // User dismissed the request
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId
+            ? {
+                ...m,
+                content: "Sorry, something went wrong. Please try again.",
+              }
+            : m
+        )
+      );
+    } finally {
+      setIsStreaming(false);
+    }
+  }, [input, isStreaming, messages]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
+
+  return (
+    <div className="fixed bottom-4 right-4 w-[380px] h-[560px] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col z-50 animate-in slide-in-from-bottom-4 fade-in">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 rounded-t-2xl bg-gradient-to-r from-blue-600 to-blue-500">
+        <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center">
+          <Bot className="w-4 h-4 text-white" />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-semibold text-white">AI Assistant</p>
+          <p className="text-[10px] text-blue-200">Powered by LangGraph</p>
+        </div>
+        <button
+          onClick={onClose}
+          className="p-1.5 rounded-lg hover:bg-white/20 text-white/70 hover:text-white transition-colors"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+        {messages.map((msg) => (
+          <div key={msg.id} className={`flex gap-2 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
+            {/* Avatar */}
+            {msg.role === "assistant" && (
+              <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center shrink-0 mt-0.5">
+                <Bot className="w-3.5 h-3.5 text-blue-600" />
+              </div>
+            )}
+
+            <div className={`flex flex-col gap-1 max-w-[80%] ${msg.role === "user" ? "items-end" : "items-start"}`}>
+              {/* Bubble */}
+              <div
+                className={`rounded-2xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
+                  msg.role === "user"
+                    ? "bg-blue-600 text-white rounded-tr-sm"
+                    : "bg-slate-100 text-slate-800 rounded-tl-sm"
+                }`}
+              >
+                {msg.content || (
+                  <span className="flex items-center gap-1.5 text-slate-400">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Thinking...
+                  </span>
+                )}
+              </div>
+
+              {/* Tool actions (highlighted chips) */}
+              {msg.actions && msg.actions.length > 0 && (
+                <div className="flex flex-col gap-1 w-full">
+                  {msg.actions.map((action, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-1.5 bg-green-50 border border-green-100 rounded-lg px-2.5 py-1.5 text-xs text-green-700"
+                    >
+                      <Wrench className="w-3 h-3 shrink-0" />
+                      {action}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input */}
+      <div className="px-3 py-3 border-t border-slate-100 rounded-b-2xl">
+        <div className="flex gap-2 items-end">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask me to manage your tickets..."
+            rows={2}
+            disabled={isStreaming}
+            className="flex-1 resize-none border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 placeholder:text-slate-400"
+          />
+          <button
+            onClick={sendMessage}
+            disabled={isStreaming || !input.trim()}
+            className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-40 transition-colors shrink-0"
+            title="Send (Enter)"
+          >
+            {isStreaming ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+          </button>
+        </div>
+        <p className="text-[10px] text-slate-400 mt-1.5 text-center">
+          Press Enter to send · Shift+Enter for new line
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Convert a tool name + result into a human-readable action label.
+ * Shown as green chips below the assistant message.
+ */
+function formatToolAction(toolName: string, result: string): string {
+  const labels: Record<string, string> = {
+    query_tickets: "Searched tickets",
+    get_ticket: "Fetched ticket details",
+    create_ticket: "Created a ticket",
+    change_status: "Updated ticket status",
+    add_comment: "Added a comment",
+    reassign_ticket: "Reassigned ticket",
+  };
+  const label = labels[toolName] ?? toolName;
+  // Show a brief snippet of the result (first 60 chars)
+  const snippet = result.length > 60 ? result.slice(0, 60) + "…" : result;
+  return `${label}: ${snippet}`;
+}
