@@ -1,27 +1,13 @@
 /**
- * Board page — main dashboard.
+ * Board page — the main dashboard.
  *
- * This is a Server Component shell. The actual board content (list/kanban toggle,
- * filtering, drag & drop) is implemented in client components imported below.
- *
- * Server Components can fetch data directly (no client-side JS needed for initial load).
- * However, since this app is behind authentication and has real-time requirements,
- * the data fetching is done in the client components to benefit from the WebSocket connection.
- *
- * Full implementation: Día 3-4.
+ * This is a lightweight Server Component shell. All interactive content
+ * (filters, drag & drop, dialogs) is delegated to the BoardContent client
+ * component, which handles data fetching via useTickets and view toggling.
  */
 
+import { BoardContent } from "@/components/board/BoardContent";
+
 export default function BoardPage() {
-  return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">Tickets</h1>
-        <p className="text-slate-500 text-sm mt-1">
-          Manage and track all work items
-        </p>
-      </div>
-      {/* BoardContent client component will be added in Día 3 */}
-      <p className="text-slate-400">Board content coming in Día 3...</p>
-    </div>
-  );
+  return <BoardContent />;
 }
