@@ -7,15 +7,22 @@ A ticket represents an incident, task, or issue. It tracks:
   - How urgent it is (priority)
   - Timestamps for creation and last modification
 
-The status and priority fields use Python enums that are stored as PostgreSQL
-ENUM types for data integrity (the DB rejects invalid values at the driver level).
+Relationships:
+  - author: the User who created the ticket (many-to-one)
+  - assignee: the User currently responsible (many-to-one, nullable)
+
+These relationships allow SQLAlchemy to eager-load related users using
+selectinload(), which avoids N+1 queries in the list/detail endpoints.
+
+The status and priority fields use Python enums stored as PostgreSQL ENUM
+types for data integrity (the DB rejects invalid values at the driver level).
 """
 
 import uuid
 import enum
 from datetime import datetime, timezone
 from sqlalchemy import String, Text, DateTime, ForeignKey, Enum as SAEnum
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
@@ -68,7 +75,6 @@ class Ticket(Base):
         nullable=False,
     )
 
-    # ForeignKeys reference users.id. author_id is immutable; assignee_id can be changed.
     author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     assignee_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
@@ -79,6 +85,18 @@ class Ticket(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
-        # onupdate fires automatically whenever SQLAlchemy executes an UPDATE on this row
         onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    # Relationships — used by selectinload() for efficient eager loading.
+    # foreign_keys is required because there are two FKs pointing to users.id.
+    author: Mapped["User"] = relationship(  # type: ignore[name-defined]
+        "User",
+        foreign_keys=[author_id],
+        lazy="noload",  # Never auto-load — always use selectinload() explicitly
+    )
+    assignee: Mapped["User | None"] = relationship(  # type: ignore[name-defined]
+        "User",
+        foreign_keys=[assignee_id],
+        lazy="noload",
     )
