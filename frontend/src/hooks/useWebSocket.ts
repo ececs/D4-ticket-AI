@@ -1,0 +1,78 @@
+/**
+ * useWebSocket — real-time notification hook.
+ *
+ * Connects to the FastAPI WebSocket endpoint (/ws?token=<jwt>) and
+ * pushes incoming notifications into the Zustand notification store.
+ *
+ * Connection lifecycle:
+ *  1. On mount: extract the JWT from the access_token cookie and connect.
+ *  2. Reconnect: if the connection closes unexpectedly (network hiccup),
+ *     wait 3 seconds and retry automatically.
+ *  3. On unmount: close the connection cleanly to avoid memory leaks.
+ *
+ * Why cookies and not a zustand token?
+ *   The JWT is stored in an HttpOnly cookie — JavaScript cannot read it via
+ *   document.cookie. We pass it as a URL query parameter (?token=...) because
+ *   native WebSocket connections don't support custom headers.
+ *   The cookie value is readable from Next.js server context, so we pass it
+ *   down as a prop from the server layout.
+ */
+
+"use client";
+
+import { useEffect, useRef } from "react";
+import useNotificationStore from "@/stores/notificationStore";
+import { Notification } from "@/types";
+
+const WS_URL = process.env.NEXT_PUBLIC_API_URL?.replace("http", "ws") ?? "ws://localhost:8000";
+
+export function useWebSocket(token: string | null) {
+  const ws = useRef<WebSocket | null>(null);
+  const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
+  const { addNotification } = useNotificationStore();
+
+  useEffect(() => {
+    if (!token) return; // Not authenticated yet
+
+    const connect = () => {
+      // Close any existing connection before creating a new one
+      if (ws.current) {
+        ws.current.onclose = null; // Prevent reconnect loop on manual close
+        ws.current.close();
+      }
+
+      const socket = new WebSocket(`${WS_URL}/ws?token=${token}`);
+      ws.current = socket;
+
+      socket.onmessage = (event) => {
+        try {
+          const notification = JSON.parse(event.data) as Notification;
+          addNotification(notification);
+        } catch {
+          // Ignore malformed messages
+        }
+      };
+
+      socket.onclose = (event) => {
+        if (!event.wasClean) {
+          // Unexpected close — schedule reconnect after 3 seconds
+          reconnectTimeout.current = setTimeout(connect, 3000);
+        }
+      };
+
+      socket.onerror = () => {
+        socket.close(); // onclose will handle reconnect
+      };
+    };
+
+    connect();
+
+    return () => {
+      if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
+      if (ws.current) {
+        ws.current.onclose = null; // Prevent reconnect on cleanup
+        ws.current.close(1000, "Component unmounted");
+      }
+    };
+  }, [token, addNotification]);
+}
