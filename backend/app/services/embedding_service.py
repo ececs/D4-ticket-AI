@@ -1,6 +1,6 @@
 """
 Embedding service — generates vector representations of text using Google's
-gemini-embedding-001 model (3072 dimensions) via direct HTTP API call.
+gemini-embedding-001 model (1536 dimensions) via direct HTTP API call.
 
 Used for:
   - Indexing tickets: embedding generated on create/update and stored in the
@@ -12,9 +12,10 @@ Graceful degradation:
   Returns None if GOOGLE_API_KEY is not set or the API call fails.
   The caller falls back to ilike (keyword search) in that case.
 
-Why gemini-embedding-001?
+Why gemini-embedding-001 with outputDimensionality=1536?
   The API key available supports the Gemini embedding model family.
-  3072 dimensions — rich semantic representation with strong multilingual support.
+  1536 dimensions via Matryoshka truncation — stays within pgvector's 2000-dim
+  HNSW index limit while preserving strong multilingual retrieval quality.
   Task type RETRIEVAL_DOCUMENT for indexing, RETRIEVAL_QUERY for search.
 """
 
@@ -27,7 +28,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 EMBEDDING_MODEL = "gemini-embedding-001"
-EMBEDDING_DIM = 3072
+EMBEDDING_DIM = 1536
 _EMBED_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:embedContent"
 
 
@@ -36,14 +37,14 @@ async def generate_embedding(
     task_type: str = "RETRIEVAL_DOCUMENT",
 ) -> Optional[list[float]]:
     """
-    Generate a 3072-dim embedding for the given text.
+    Generate a 1536-dim embedding for the given text.
 
     Args:
         text: The text to embed (truncated to 2000 chars to stay within limits).
         task_type: "RETRIEVAL_DOCUMENT" for indexing, "RETRIEVAL_QUERY" for search.
 
     Returns:
-        List of 3072 floats, or None if generation failed.
+        List of 1536 floats, or None if generation failed.
     """
     from app.core.config import settings
 
@@ -55,6 +56,7 @@ async def generate_embedding(
         "model": f"models/{EMBEDDING_MODEL}",
         "content": {"parts": [{"text": text[:2000]}]},
         "taskType": task_type,
+        "outputDimensionality": EMBEDDING_DIM,
     }
 
     try:
