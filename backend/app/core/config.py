@@ -8,6 +8,8 @@ has the wrong type, the application will fail fast with a clear error message.
 Environment variables take precedence over .env file values.
 """
 
+from typing import Any
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,6 +43,22 @@ class Settings(BaseSettings):
     # Supports domains: use "@domain.com" to allow everyone from that org.
     # In production, set this to your email and "@orbidi.com".
     ALLOWED_EMAILS: list[str] = ["*"]
+
+    @field_validator("ALLOWED_EMAILS", mode="before")
+    @classmethod
+    def parse_allowed_emails(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            # Try to parse as JSON first (e.g. '["a", "b"]')
+            try:
+                import json
+                data = json.loads(v)
+                if isinstance(data, list):
+                    return data
+            except Exception:
+                pass
+            # Fallback: Split by comma (e.g. 'a@b.com, @c.com')
+            return [i.strip() for i in v.split(",") if i.strip()]
+        return v
 
     # Secret code for demo/evaluator access (optional)
     DEMO_ACCESS_CODE: str = ""
