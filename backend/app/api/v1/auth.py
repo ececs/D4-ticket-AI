@@ -133,16 +133,13 @@ async def auth_callback(
 
     jwt_token = create_access_token(str(user.id))
 
-    redirect = RedirectResponse(url=f"{settings.FRONTEND_URL}/board")
-    redirect.delete_cookie("oauth_state")
-    redirect.set_cookie(
-        key="access_token",
-        value=jwt_token,
-        httponly=True,
-        secure=_is_https,
-        samesite="lax",
-        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    # Redirect to the frontend's /api/auth/callback route which sets the cookie
+    # on the frontend domain (necessary because backend and frontend are on different
+    # domains — cookies set by the backend cannot be read by the frontend browser).
+    redirect = RedirectResponse(
+        url=f"{settings.FRONTEND_URL}/api/auth/callback?token={jwt_token}"
     )
+    redirect.delete_cookie("oauth_state")
     return redirect
 
 
