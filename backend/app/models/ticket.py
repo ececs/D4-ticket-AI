@@ -21,9 +21,18 @@ types for data integrity (the DB rejects invalid values at the driver level).
 import uuid
 import enum
 from datetime import datetime, timezone
+from typing import Optional
 from sqlalchemy import String, Text, DateTime, ForeignKey, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
+
+try:
+    from pgvector.sqlalchemy import Vector as _Vector
+    _EMBEDDING_TYPE = _Vector(768)
+except ImportError:
+    # Fallback for environments without pgvector (e.g. CI without the extension)
+    from sqlalchemy import LargeBinary
+    _EMBEDDING_TYPE = LargeBinary()
 
 
 class TicketStatus(str, enum.Enum):
@@ -77,6 +86,10 @@ class Ticket(Base):
 
     author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     assignee_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    # Semantic search — 768-dim embedding of title + description.
+    # Generated asynchronously on create/update; NULL until first embedding run.
+    embedding: Mapped[Optional[list]] = mapped_column(_EMBEDDING_TYPE, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
