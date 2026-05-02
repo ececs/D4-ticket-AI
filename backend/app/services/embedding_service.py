@@ -48,22 +48,17 @@ async def generate_embedding(
         return None
 
     try:
-        from google import genai
-        from google.genai import types as genai_types
+        import google.generativeai as genai
 
-        # Use stable v1 API — text-embedding-004 is not available in v1beta
-        client = genai.Client(
-            api_key=settings.GOOGLE_API_KEY,
-            http_options=genai_types.HttpOptions(api_version="v1"),
-        )
+        genai.configure(api_key=settings.GOOGLE_API_KEY)
 
         result = await asyncio.to_thread(
-            client.models.embed_content,
-            model=EMBEDDING_MODEL,
-            contents=text[:2000],
-            config=genai_types.EmbedContentConfig(task_type=task_type),
+            genai.embed_content,
+            model=f"models/{EMBEDDING_MODEL}",
+            content=text[:2000],
+            task_type=task_type,
         )
-        return result.embeddings[0].values
+        return result["embedding"]
 
     except Exception as exc:
         logger.warning("Embedding generation failed: %s", exc)
