@@ -28,8 +28,12 @@ from app.core.security import create_access_token
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.user import UserOut
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+class DemoLoginRequest(BaseModel):
+    code: str = Field(..., description="The secret demo access code")
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -168,6 +172,37 @@ async def logout(response: Response):
     """Clear the JWT cookie, logging the user out."""
     response.delete_cookie("access_token")
     return {"message": "Logged out successfully"}
+
+
+@router.post("/demo-login", summary="Login with a secret demo code")
+async def demo_login(body: DemoLoginRequest, db: DB):
+    """
+    Allow access via a pre-configured secret code.
+    Useful for evaluators who don't want to use Google OAuth.
+    """
+    if not settings.DEMO_ACCESS_CODE or body.code != settings.DEMO_ACCESS_CODE:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Código de acceso incorrecto o no configurado."
+        )
+
+    # Use a fixed email for the demo user
+    demo_email = "evaluator@demo.local"
+    result = await db.execute(select(User).where(User.email == demo_email))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        user = User(
+            email=demo_email,
+            name="Evaluador Orbidi",
+            avatar_url="https://api.dicebear.com/7.x/bottts/svg?seed=orbidi"
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+    jwt_token = create_access_token(str(user.id))
+    return {"token": jwt_token}
 
 
 @router.get("/me", response_model=UserOut, summary="Get current user profile")

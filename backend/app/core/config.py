@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     # In production, set this to your email and "@orbidi.com".
     ALLOWED_EMAILS: list[str] = ["*"]
 
+    # Secret code for demo/evaluator access (optional)
+    DEMO_ACCESS_CODE: str = ""
+
     # --- File Storage (S3-compatible via boto3) ---
     # Local dev: MinIO container. Production: Cloudflare R2 (same boto3 code, different endpoint)
     STORAGE_ENDPOINT: str = "http://minio:9000"
