@@ -38,7 +38,7 @@ async def init_checkpointer() -> None:
 
         raw_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
 
-        _pool = AsyncConnectionPool(conninfo=raw_url, max_size=3, open=False)
+        _pool = AsyncConnectionPool(conninfo=raw_url, min_size=1, max_size=3, open=False)
         await _pool.open(wait=True, timeout=10.0)
 
         _checkpointer = AsyncPostgresSaver(_pool)
