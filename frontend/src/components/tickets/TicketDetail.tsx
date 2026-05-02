@@ -66,14 +66,24 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
     Promise.all([
       api.get<Ticket>(`/tickets/${ticketId}`),
       api.get<Comment[]>(`/tickets/${ticketId}/comments`),
-      api.get<Attachment[]>(`/tickets/${ticketId}/attachments`),
+      api.get<Attachment[]>(`/tickets/${ticketId}/attachments`).catch(() => ({ data: [] as Attachment[] })),
     ])
       .then(([ticketRes, commentsRes, attachmentsRes]) => {
         setTicket(ticketRes.data);
         setComments(commentsRes.data);
         setAttachments(attachmentsRes.data);
       })
-      .catch(() => setError("Failed to load ticket"))
+      .catch((err) => {
+        const status = err?.response?.status;
+        const detail = err?.response?.data?.detail;
+        setError(
+          status === 404
+            ? "Ticket not found"
+            : detail
+            ? `Error: ${detail}`
+            : `Failed to load ticket (${status ?? "network error"})`
+        );
+      })
       .finally(() => setIsLoading(false));
   }, [ticketId]);
 
