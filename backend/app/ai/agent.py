@@ -93,5 +93,5 @@ def build_agent(db: AsyncSession, actor: User):
     return create_react_agent(
         model=llm,
         tools=tools,
-        state_modifier=SystemMessage(content=SYSTEM_PROMPT),
+        prompt=SystemMessage(content=SYSTEM_PROMPT),
     )

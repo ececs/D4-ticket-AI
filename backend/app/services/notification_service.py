@@ -99,20 +99,6 @@ async def notify_ticket_assigned(
     assignee: User,
     actor: User,
 ) -> None:
-    """
-    Notify the new assignee that a ticket has been assigned to them.
-
-    Skipped if the actor is assigning the ticket to themselves (no self-notification).
-
-    Args:
-        db: Database session.
-        ticket: The ticket being assigned.
-        assignee: The user being assigned.
-        actor: The user performing the assignment.
-    """
-    if assignee.id == actor.id:
-        return  # No self-notification
-
     await _create_notification(
         db,
         user_id=assignee.id,
@@ -127,23 +113,11 @@ async def notify_comment_added(
     ticket: Ticket,
     commenter: User,
 ) -> None:
-    """
-    Notify the ticket author and assignee that a comment was added.
-
-    Skips notification for the commenter themselves (they know what they wrote).
-
-    Args:
-        db: Database session.
-        ticket: The ticket that received the comment.
-        commenter: The user who wrote the comment.
-    """
-    # Collect unique users to notify (author + assignee, excluding the commenter)
     users_to_notify: set[uuid.UUID] = set()
 
-    if ticket.author_id != commenter.id:
-        users_to_notify.add(ticket.author_id)
+    users_to_notify.add(ticket.author_id)
 
-    if ticket.assignee_id and ticket.assignee_id != commenter.id:
+    if ticket.assignee_id:
         users_to_notify.add(ticket.assignee_id)
 
     for user_id in users_to_notify:
@@ -176,10 +150,9 @@ async def notify_status_changed(
 
     users_to_notify: set[uuid.UUID] = set()
 
-    if ticket.author_id != actor.id:
-        users_to_notify.add(ticket.author_id)
+    users_to_notify.add(ticket.author_id)
 
-    if ticket.assignee_id and ticket.assignee_id != actor.id:
+    if ticket.assignee_id:
         users_to_notify.add(ticket.assignee_id)
 
     for user_id in users_to_notify:
