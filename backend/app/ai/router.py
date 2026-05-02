@@ -130,6 +130,9 @@ async def chat(
     async def event_stream():
         # First event: confirm the thread_id so the frontend can persist it
         yield f"data: {json.dumps({'type': 'session', 'thread_id': thread_id})}\n\n"
+        
+        # Immediate visual feedback: send a subtle "thinking" token to break buffering
+        yield f"data: {json.dumps({'type': 'content', 'content': ' '})}\n\n"
 
         try:
             has_content = False
