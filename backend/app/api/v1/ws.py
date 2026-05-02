@@ -16,6 +16,8 @@ Flow:
   4. Server listens for disconnect; cleans up on close.
 """
 
+import asyncio
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -79,8 +81,14 @@ async def websocket_endpoint(
             await websocket.send_text(out.model_dump_json())
 
     try:
-        # Keep the connection alive — wait for client to disconnect
+        # Keep the connection alive with periodic pings.
+        # Railway (and most reverse proxies) close idle WebSocket connections
+        # after ~60 s. Sending a ping every 30 s prevents that.
         while True:
-            await websocket.receive_text()  # We don't expect messages but this keeps the loop open
+            try:
+                # Wait up to 30 s for a client message; if nothing arrives, send a ping
+                await asyncio.wait_for(websocket.receive_text(), timeout=30)
+            except asyncio.TimeoutError:
+                await websocket.send_text('{"type":"ping"}')
     except WebSocketDisconnect:
         manager.disconnect(websocket, user.id)
