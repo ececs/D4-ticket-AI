@@ -42,20 +42,26 @@ class Settings(BaseSettings):
     # List of emails allowed to log in. Use ["*"] to allow anyone.
     # Supports domains: use "@domain.com" to allow everyone from that org.
     # In production, set this to your email and "@orbidi.com".
-    ALLOWED_EMAILS: list[str] = ["*"]
+    # We use Any here to prevent Pydantic from trying to auto-JSON-decode 
+    # comma-separated strings from environment variables.
+    ALLOWED_EMAILS: Any = ["*"]
 
     @field_validator("ALLOWED_EMAILS", mode="before")
     @classmethod
     def parse_allowed_emails(cls, v: Any) -> list[str]:
         if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return ["*"]
             # Try to parse as JSON first (e.g. '["a", "b"]')
-            try:
-                import json
-                data = json.loads(v)
-                if isinstance(data, list):
-                    return data
-            except Exception:
-                pass
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    import json
+                    data = json.loads(v)
+                    if isinstance(data, list):
+                        return data
+                except Exception:
+                    pass
             # Fallback: Split by comma (e.g. 'a@b.com, @c.com')
             return [i.strip() for i in v.split(",") if i.strip()]
         return v
