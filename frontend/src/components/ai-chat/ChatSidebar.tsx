@@ -86,10 +86,20 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
     try {
       abortRef.current = new AbortController();
 
+      // Read JWT from the frontend-domain cookie and attach as Bearer header.
+      // fetch() bypasses the axios interceptor, so we replicate the same logic here.
+      const cookieMatch = document.cookie.match(/(?:^|;\s*)access_token=([^;]+)/);
+      const authHeader = cookieMatch
+        ? `Bearer ${decodeURIComponent(cookieMatch[1])}`
+        : "";
+
       const response = await fetch(`${API_URL}/api/v1/ai/chat`, {
         method: "POST",
-        credentials: "include", // Send the auth cookie
-        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(authHeader ? { Authorization: authHeader } : {}),
+        },
         body: JSON.stringify({ messages: historyToSend }),
         signal: abortRef.current.signal,
       });
