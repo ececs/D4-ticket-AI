@@ -1,38 +1,57 @@
 """
-Ticket service — reusable business logic for the AI agent.
+Ticket Service Module.
 
-The API routers handle HTTP concerns (parsing requests, returning responses).
-This service layer encapsulates ticket operations that can be called from
-both the HTTP router and the LangGraph AI agent tools.
+This service encapsulates the core business logic for ticket management. 
+By centralizing these operations, we ensure that both the REST API and the 
+AI Agent follow the same rules, validation, and notification triggers.
 
-This avoids duplicating database logic: the AI agent uses the same
-validated, notification-aware functions as the REST API.
-
-All functions receive an AsyncSession and the acting user, ensuring that
-the AI agent can only perform actions the user is authorized to do.
+Architecture (Senior Pattern):
+- Decoupling: This service returns Pydantic schemas (`TicketOut`) instead of 
+  SQLAlchemy models. This prevents "Lazy Loading" errors and ensures that the 
+  calling layer (API or AI) cannot accidentally modify the database state 
+  without going through the service.
+- Atomicity: All write operations handle their own commits and flushes 
+  within the provided transaction context.
 """
 
 import uuid
+from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.models.ticket import Ticket, TicketStatus, TicketPriority
 from app.models.user import User
+from app.schemas.ticket import TicketOut
 from app.services import notification_service
 
 
-async def get_ticket(db: AsyncSession, ticket_id: uuid.UUID) -> Ticket | None:
-    """Fetch a single ticket with its author and assignee relationships loaded."""
+async def get_ticket(db: AsyncSession, ticket_id: uuid.UUID) -> Optional[TicketOut]:
+    """
+    Retrieves a single ticket by its UUID with all relations eagerly loaded.
+
+    Args:
+        db: Asynchronous database session.
+        ticket_id: The unique identifier of the ticket.
+
+    Returns:
+        Optional[TicketOut]: A validated Pydantic model of the ticket, 
+            or None if not found.
+    """
     result = await db.execute(
         select(Ticket)
         .options(
-            selectinload(Ticket.author),   # type: ignore[attr-defined]
-            selectinload(Ticket.assignee), # type: ignore[attr-defined]
+            selectinload(Ticket.author),    # type: ignore[attr-defined]
+            selectinload(Ticket.assignee),  # type: ignore[attr-defined]
         )
         .where(Ticket.id == ticket_id)
     )
-    return result.scalar_one_or_none()
+    ticket = result.scalar_one_or_none()
+    
+    if not ticket:
+        return None
+        
+    return TicketOut.model_validate(ticket)
 
 
 async def change_status(
@@ -40,52 +59,72 @@ async def change_status(
     ticket_id: uuid.UUID,
     new_status: TicketStatus,
     actor: User,
-) -> Ticket | None:
+) -> Optional[TicketOut]:
     """
-    Change a ticket's status and notify relevant users.
+    Transitions a ticket to a new workflow status and triggers notifications.
 
-    Used by both PATCH /tickets/{id} and the AI agent's change_status tool.
+    Args:
+        db: Database session.
+        ticket_id: UUID of the target ticket.
+        new_status: The target TicketStatus enum value.
+        actor: The user performing the action (for auditing and notifications).
 
-    Returns the updated ticket, or None if the ticket was not found.
+    Returns:
+        Optional[TicketOut]: The updated ticket schema, or None if not found.
     """
+    # 1. Fetch the "live" model from the session
     result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
     ticket = result.scalar_one_or_none()
+    
     if not ticket:
         return None
 
+    # 2. Apply business logic
     old_status = ticket.status
     ticket.status = new_status
-    await db.flush()
-
+    
+    # 3. Handle side effects (Notifications)
     if new_status != old_status:
         await notification_service.notify_status_changed(
             db, ticket=ticket, actor=actor, new_status=new_status.value
         )
 
+    # 4. Persist changes
     await db.commit()
+    
+    # 5. Return a clean, decoupled Pydantic object
     return await get_ticket(db, ticket_id)
 
 
 async def reassign(
     db: AsyncSession,
     ticket_id: uuid.UUID,
-    assignee_id: uuid.UUID | None,
+    assignee_id: Optional[uuid.UUID],
     actor: User,
-) -> Ticket | None:
+) -> Optional[TicketOut]:
     """
-    Reassign a ticket to a different user (or unassign with assignee_id=None).
+    Changes the assigned user for a ticket and notifies the new assignee.
 
-    Notifies the new assignee if one is set and it's not the actor themselves.
-    Returns the updated ticket, or None if the ticket was not found.
+    Args:
+        db: Database session.
+        ticket_id: UUID of the ticket.
+        assignee_id: UUID of the new user, or None to unassign.
+        actor: The user performing the change.
+
+    Returns:
+        Optional[TicketOut]: The updated ticket schema.
     """
+    # 1. Fetch the model
     result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
     ticket = result.scalar_one_or_none()
+    
     if not ticket:
         return None
 
+    # 2. Update field
     ticket.assignee_id = assignee_id
-    await db.flush()
-
+    
+    # 3. Notify if a new assignee is provided
     if assignee_id:
         assignee_result = await db.execute(select(User).where(User.id == assignee_id))
         new_assignee = assignee_result.scalar_one_or_none()
@@ -94,5 +133,8 @@ async def reassign(
                 db, ticket=ticket, assignee=new_assignee, actor=actor
             )
 
+    # 4. Persist
     await db.commit()
+    
+    # 5. Return decoupled schema
     return await get_ticket(db, ticket_id)

@@ -25,10 +25,12 @@ Memory strategy:
 
 import json
 import uuid
+import logging
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from langchain_core.messages import HumanMessage
 
 from app.core.dependencies import CurrentUser, DB
 from app.ai.agent import build_agent
@@ -45,6 +47,33 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
     thread_id: str | None = None  # UUID generated and persisted by the frontend
+
+
+@router.get("/history/{thread_id}")
+async def get_chat_history(thread_id: str):
+    """
+    Fetch the historical messages for a specific thread from the checkpointer.
+    This allows the frontend to restore the UI state after a refresh.
+    """
+    checkpointer = get_checkpointer()
+    if not checkpointer:
+        return {"messages": []}
+
+    config = {"configurable": {"thread_id": thread_id}}
+    state = await checkpointer.aget(config)
+    
+    if not state or "messages" not in state.values:
+        return {"messages": []}
+
+    # Convert LangChain messages to our ChatMessage schema
+    history = []
+    for msg in state.values["messages"]:
+        role = "user" if msg.type == "human" else "assistant"
+        # Skip tool messages in the basic UI history to keep it clean
+        if msg.type in ["human", "ai"]:
+            history.append({"role": role, "content": msg.content})
+            
+    return {"messages": history}
 
 
 @router.post("/chat")
@@ -65,38 +94,79 @@ async def chat(
       - Full message history is passed on every request (legacy behavior).
     """
     checkpointer = get_checkpointer()
-    thread_id = request.thread_id or str(uuid.uuid4())
+    # Fallback to current_user.id if no thread_id is provided.
+    thread_id = request.thread_id or str(current_user.id)
     agent = build_agent(db, current_user)
+    
+    v_logger = logging.getLogger("uvicorn.error")
+    v_logger.info("AI Session: thread_id=%s (Source: %s)", thread_id, "Frontend" if request.thread_id else "UserFallback")
 
-    if checkpointer and request.thread_id:
+    if checkpointer and thread_id:
+        v_logger.info("Memory: Loading persistent history for thread %s", thread_id)
         # Persistent mode: send only the new user message; agent recovers history
-        lc_messages = [{"role": "user", "content": request.messages[-1].content}]
+        initial_state = {
+            "messages": [HumanMessage(content=request.messages[-1].content)],
+            "remaining_steps": 40,
+        }
     else:
+        v_logger.warning("Memory: Running in STATELESS mode (no checkpointer or no thread_id)")
         # Stateless fallback: send the full conversation history
-        lc_messages = [
-            {"role": msg.role, "content": msg.content}
-            for msg in request.messages
-        ]
+        initial_state = {
+            "messages": [
+                {"role": msg.role, "content": msg.content}
+                for msg in request.messages
+            ],
+            "remaining_steps": 40,
+        }
 
     config = {"configurable": {"thread_id": thread_id}}
+    
+    # DEBUG: Check what's currently in memory
+    if checkpointer:
+        state = await agent.aget_state(config)
+        history_count = len(state.values.get("messages", [])) if state.values else 0
+        v_logger.info("Memory Check: Thread %s has %d messages in DB", thread_id, history_count)
 
     async def event_stream():
         # First event: confirm the thread_id so the frontend can persist it
         yield f"data: {json.dumps({'type': 'session', 'thread_id': thread_id})}\n\n"
 
         try:
+            has_content = False
+            active_model = "IA"
             async for event in agent.astream_events(
-                {"messages": lc_messages},
-                config=config,
+                initial_state,
                 version="v2",
+                config=config
             ):
-                kind = event.get("event")
+                kind = event["event"]
+                
+                # Identify which model is responding
+                if kind == "on_chat_model_start":
+                    m_name = event.get("name", "")
+                    if "Google" in m_name: active_model = "Gemini"
+                    elif "OpenAI" in m_name: active_model = "GPT"
+                    v_logger.info("AI Model Starting: %s (%s)", m_name, active_model)
 
                 if kind == "on_chat_model_stream":
-                    chunk = event.get("data", {}).get("chunk")
+                    chunk = event["data"]["chunk"]
                     if chunk and hasattr(chunk, "content") and chunk.content:
-                        payload = json.dumps({"type": "token", "content": chunk.content})
-                        yield f"data: {payload}\n\n"
+                        has_content = True
+                        content = chunk.content
+                        # Prepend debug info only on the very first token
+                        if not hasattr(event_stream, "_debug_sent"):
+                            content = f"*(Modo: {active_model})* " + content
+                            setattr(event_stream, "_debug_sent", True)
+                            
+                        yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+
+                elif kind == "on_tool_start":
+                    tool_name = event.get("name", "")
+                    payload = json.dumps({
+                        "type": "tool_start",
+                        "name": tool_name,
+                    })
+                    yield f"data: {payload}\n\n"
 
                 elif kind == "on_tool_end":
                     tool_name = event.get("name", "")
@@ -108,9 +178,14 @@ async def chat(
                     })
                     yield f"data: {payload}\n\n"
 
+            if not has_content:
+                v_logger.warning("AI Stream finished with NO content. Sending safety message.")
+                yield f"data: {json.dumps({'type': 'content', 'content': '*(Sistema: Los modelos de IA no han respondido. Por favor, intenta de nuevo.)*'})}\n\n"
+
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
         except Exception as e:
+            logger.error("Streaming error in chat: %s", str(e), exc_info=True)
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 

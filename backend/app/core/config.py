@@ -46,12 +46,13 @@ class Settings(BaseSettings):
     STORAGE_REGION: str = "us-east-1"
 
     # --- AI Agent ---
-    # Gemini 2.5 Flash by default (free tier: 500 req/day).
-    # Switch to "anthropic" + claude-haiku-4-5-20251001 for guaranteed reliability.
-    AI_PROVIDER: str = "google"  # "google" | "anthropic"
+    # Gemini 1.5 Flash by default (free tier).
+    # Switch to "openai" + gpt-4o-mini for guaranteed reliability and performance.
+    AI_PROVIDER: str = "google"  # "google" | "anthropic" | "openai"
     AI_MODEL: str = "gemini-2.5-flash"
     GOOGLE_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
 
     # --- Observability (LangSmith) ---
     # Set LANGSMITH_TRACING=true + LANGSMITH_API_KEY in Railway to enable agent tracing.

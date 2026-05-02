@@ -32,9 +32,9 @@ from app.core.dependencies import CurrentUser, DB
 from app.models.ticket import Ticket, TicketPriority, TicketStatus
 from app.models.user import User
 from app.schemas.ticket import TicketCreate, TicketListResponse, TicketOut, TicketUpdate
-from app.services import notification_service
 from app.services.cache_service import cache_get, cache_set, cache_invalidate_prefix
 from app.services.embedding_service import generate_embedding, generate_ticket_embedding
+from app.services import ticket_service
 
 CACHE_PREFIX = "tickets:"
 CACHE_TTL = 60  # seconds
@@ -162,12 +162,12 @@ async def create_ticket(body: TicketCreate, db: DB, current_user: CurrentUser):
     asyncio.create_task(_embed_ticket(ticket.id, body.title, body.description))
     await cache_invalidate_prefix(CACHE_PREFIX)
 
-    return await _get_ticket_with_relations(db, ticket.id)
+    return await ticket_service.get_ticket(db, ticket.id)
 
 
 @router.get("/{ticket_id}", response_model=TicketOut, summary="Get a ticket by ID")
 async def get_ticket(ticket_id: uuid.UUID, db: DB, current_user: CurrentUser):
-    ticket = await _get_ticket_with_relations(db, ticket_id)
+    ticket = await ticket_service.get_ticket(db, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
     return ticket
@@ -217,7 +217,7 @@ async def update_ticket(
 
     await cache_invalidate_prefix(CACHE_PREFIX)
 
-    return await _get_ticket_with_relations(db, ticket_id)
+    return await ticket_service.get_ticket(db, ticket_id)
 
 
 @router.delete("/{ticket_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a ticket")
@@ -233,17 +233,6 @@ async def delete_ticket(ticket_id: uuid.UUID, db: DB, current_user: CurrentUser)
 
 
 # ─── Private helpers ──────────────────────────────────────────────────────────
-
-async def _get_ticket_with_relations(db: DB, ticket_id: uuid.UUID) -> TicketOut | None:
-    result = await db.execute(
-        select(Ticket)
-        .options(
-            selectinload(Ticket.author),    # type: ignore[attr-defined]
-            selectinload(Ticket.assignee),  # type: ignore[attr-defined]
-        )
-        .where(Ticket.id == ticket_id)
-    )
-    return result.scalar_one_or_none()
 
 
 async def _embed_ticket(ticket_id: uuid.UUID, title: str, description: str | None) -> None:

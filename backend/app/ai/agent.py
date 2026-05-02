@@ -24,13 +24,14 @@ from app.core.config import settings
 from app.models.user import User
 from app.ai.tools import make_tools
 from app.ai.checkpoint import get_checkpointer
+from app.ai.state import AgentState
 
 
 SYSTEM_PROMPT = """You are an AI assistant for D4-Ticket AI, a professional ticketing system.
 You help users manage their tickets through natural language.
 
 You have access to the following tools:
-- query_tickets: search and filter tickets
+- query_tickets: search and filter tickets (returns status, priority, title, and ID)
 - get_ticket: get details of a specific ticket
 - create_ticket: create a new ticket
 - change_status: change a ticket's status
@@ -42,6 +43,8 @@ Guidelines:
 - Always respond in the same language the user is writing in (Spanish or English).
 - When you perform an action (create, update, comment), confirm it clearly.
 - If you need a ticket ID and the user gave a partial ID or title, use query_tickets first.
+- To find "urgent" tickets, use query_tickets (the most urgent will be at the top). The information in the list is sufficient; DO NOT call get_ticket for every result unless the user asks for full details.
+- If multiple tickets have the same maximum priority, the oldest ones are considered more urgent. Explain this reasoning to the user (e.g., "This ticket is critical and has been open the longest").
 - Be concise and friendly. Avoid unnecessary technical jargon.
 - Never invent ticket IDs or user emails — always verify with tools first.
 - If an action fails, explain why clearly.
@@ -51,47 +54,44 @@ Guidelines:
 
 def get_llm() -> BaseChatModel:
     """
-    Construct the LLM based on the AI_PROVIDER environment variable.
-
-    Supported providers:
-      - "google": Gemini 2.5 Flash (free tier, 500 req/day) — default
-      - "anthropic": Claude Haiku 4.5 (reliable fallback, low cost)
-
-    Switching: set AI_PROVIDER and AI_MODEL in .env, restart the backend.
+    Construct the LLM with automatic fallback.
+    Primary: Gemini 2.0 Flash (Fast & Modern)
+    Fallback: OpenAI GPT-4o-mini (Reliable & Cheap)
     """
-    if settings.AI_PROVIDER == "anthropic":
-        from langchain_anthropic import ChatAnthropic
-        return ChatAnthropic(
-            model=settings.AI_MODEL,
-            api_key=settings.ANTHROPIC_API_KEY,  # type: ignore[arg-type]
+    # 1. Initialize Gemini (Primary)
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    gemini = ChatGoogleGenerativeAI(
+        model="gemini-2.0-flash", 
+        google_api_key=settings.GOOGLE_API_KEY,  # type: ignore[arg-type]
+        temperature=0,
+        streaming=True,
+        max_retries=0, # FAIL FAST: jump to OpenAI immediately if quota is hit
+    )
+
+    # 2. Initialize OpenAI (Fallback)
+    # Only if the key is provided in settings
+    if settings.OPENAI_API_KEY:
+        from langchain_openai import ChatOpenAI
+        openai = ChatOpenAI(
+            model="gpt-4o-mini",
+            api_key=settings.OPENAI_API_KEY,  # type: ignore[arg-type]
             temperature=0,
+            streaming=True,
         )
-    else:
-        # Default: Google Gemini
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(
-            model=settings.AI_MODEL,
-            google_api_key=settings.GOOGLE_API_KEY,  # type: ignore[arg-type]
-            temperature=0,
-        )
+        # Apply automatic fallback logic: if Gemini fails, use OpenAI
+        return gemini.with_fallbacks([openai])
+    
+    return gemini
 
 
 def build_agent(db: AsyncSession, actor: User):
     """
     Build a ReAct agent for a single request.
-
-    A fresh agent is created per request so the tools have the correct
-    db session and actor for that request's context.
-
-    Args:
-        db: The SQLAlchemy async session for this request.
-        actor: The authenticated user — tools act on their behalf.
-
-    Returns:
-        A compiled LangGraph CompiledGraph ready to stream.
     """
     llm = get_llm()
     tools = make_tools(db, actor)
+    
+    # Restoring persistent PostgreSQL memory
     checkpointer = get_checkpointer()
 
     return create_react_agent(
@@ -99,4 +99,5 @@ def build_agent(db: AsyncSession, actor: User):
         tools=tools,
         prompt=SystemMessage(content=SYSTEM_PROMPT),
         checkpointer=checkpointer,
+        state_schema=AgentState,
     )

@@ -17,6 +17,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.knowledge_chunk import KnowledgeChunk
+from app.schemas.knowledge import IngestResponse
 from app.services.embedding_service import generate_embedding
 
 logger = logging.getLogger(__name__)
@@ -106,7 +107,7 @@ async def ingest_url(db: AsyncSession, url: str) -> dict:
     await db.commit()
 
     logger.info("Ingested %d chunks from %s", len(rows), url)
-    return {"url": url, "chunks_created": len(rows)}
+    return IngestResponse(url=url, chunks_created=len(rows))
 
 
 async def search(db: AsyncSession, query: str, k: int = 5) -> list[str]:

@@ -40,3 +40,6 @@ htmlcov/
 
 # Private Docs
 docs_private/
+
+# AI Assistant Settings
+.claude/
