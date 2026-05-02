@@ -21,7 +21,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { X, Send, Bot, Loader2, Wrench } from "lucide-react";
+import { X, Send, Bot, Loader2, Wrench, RotateCcw } from "lucide-react";
 import { ChatMessage } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -44,6 +44,15 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
   const [isStreaming, setIsStreaming] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // thread_id persists in localStorage so the agent remembers across page reloads
+  const threadIdRef = useRef<string>(
+    typeof window !== "undefined"
+      ? (localStorage.getItem("ai_thread_id") ?? crypto.randomUUID())
+      : crypto.randomUUID()
+  );
+  useEffect(() => {
+    localStorage.setItem("ai_thread_id", threadIdRef.current);
+  }, []);
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -77,7 +86,9 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
 
-    // Build the conversation to send (exclude the empty placeholder we just added)
+    // With persistent memory: send only the new user message + thread_id.
+    // The agent recovers full conversation history from its PostgreSQL checkpoint.
+    // Fallback (no checkpointer): send all messages as before.
     const historyToSend = [...messages, userMsg].map((m) => ({
       role: m.role,
       content: m.content,
@@ -86,8 +97,6 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
     try {
       abortRef.current = new AbortController();
 
-      // Read JWT from the frontend-domain cookie and attach as Bearer header.
-      // fetch() bypasses the axios interceptor, so we replicate the same logic here.
       const cookieMatch = document.cookie.match(/(?:^|;\s*)access_token=([^;]+)/);
       const authHeader = cookieMatch
         ? `Bearer ${decodeURIComponent(cookieMatch[1])}`
@@ -100,7 +109,10 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
           "Content-Type": "application/json",
           ...(authHeader ? { Authorization: authHeader } : {}),
         },
-        body: JSON.stringify({ messages: historyToSend }),
+        body: JSON.stringify({
+          messages: historyToSend,
+          thread_id: threadIdRef.current,
+        }),
         signal: abortRef.current.signal,
       });
 
@@ -133,9 +145,14 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
               content?: string;
               name?: string;
               result?: string;
+              thread_id?: string;
             };
 
-            if (event.type === "token" && event.content) {
+            if (event.type === "session" && event.thread_id) {
+              // Confirm/update thread_id from server (in case it was generated server-side)
+              threadIdRef.current = event.thread_id as string;
+              localStorage.setItem("ai_thread_id", event.thread_id as string);
+            } else if (event.type === "token" && event.content) {
               // Append text token to the assistant message
               setMessages((prev) =>
                 prev.map((m) =>
@@ -196,8 +213,25 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
         </div>
         <div className="flex-1">
           <p className="text-sm font-semibold text-white">AI Assistant</p>
-          <p className="text-[10px] text-blue-200">Powered by LangGraph</p>
+          <p className="text-[10px] text-blue-200">Powered by LangGraph · memory enabled</p>
         </div>
+        <button
+          onClick={() => {
+            const newId = crypto.randomUUID();
+            threadIdRef.current = newId;
+            localStorage.setItem("ai_thread_id", newId);
+            setMessages([{
+              id: "welcome",
+              role: "assistant",
+              content: "New conversation started. How can I help you?",
+              created_at: new Date().toISOString(),
+            }]);
+          }}
+          title="New conversation"
+          className="p-1.5 rounded-lg hover:bg-white/20 text-white/70 hover:text-white transition-colors"
+        >
+          <RotateCcw className="w-4 h-4" />
+        </button>
         <button
           onClick={onClose}
           className="p-1.5 rounded-lg hover:bg-white/20 text-white/70 hover:text-white transition-colors"

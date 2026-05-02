@@ -70,6 +70,7 @@ async def client(db_session: AsyncSession, test_user: User) -> AsyncGenerator[As
         with (
             patch("app.main._init_storage", new_callable=AsyncMock),
             patch("app.main._pg_listen_loop", new_callable=AsyncMock),
+            patch("app.main.init_checkpointer", new_callable=AsyncMock),
             patch("app.services.notification_service._pg_notify", new_callable=AsyncMock),
         ):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -92,6 +93,7 @@ async def unauth_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient,
         with (
             patch("app.main._init_storage", new_callable=AsyncMock),
             patch("app.main._pg_listen_loop", new_callable=AsyncMock),
+            patch("app.main.init_checkpointer", new_callable=AsyncMock),
         ):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                 yield ac

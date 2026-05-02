@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.user import User
 from app.ai.tools import make_tools
+from app.ai.checkpoint import get_checkpointer
 
 
 SYSTEM_PROMPT = """You are an AI assistant for D4-Ticket AI, a professional ticketing system.
@@ -89,9 +90,11 @@ def build_agent(db: AsyncSession, actor: User):
     """
     llm = get_llm()
     tools = make_tools(db, actor)
+    checkpointer = get_checkpointer()
 
     return create_react_agent(
         model=llm,
         tools=tools,
         prompt=SystemMessage(content=SYSTEM_PROMPT),
+        checkpointer=checkpointer,
     )

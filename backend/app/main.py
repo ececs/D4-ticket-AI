@@ -24,42 +24,31 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-
-logger = logging.getLogger(__name__)
 from app.core.websocket_manager import manager
 from app.api.v1 import auth, tickets, comments, attachments, users, notifications, ws
 from app.ai import router as ai_router
+from app.ai.checkpoint import init_checkpointer, close_pool
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Manage startup and shutdown tasks.
-
-    Startup:
-      - Ensure the MinIO/R2 attachments bucket exists.
-      - Start the asyncpg LISTEN loop in the background.
-
-    Shutdown:
-      - Cancel the LISTEN task cleanly (avoids asyncpg connection leaks).
-    """
-    # --- Startup: configure LangSmith tracing (if enabled) ---
+    # --- Startup ---
     _init_langsmith()
-
-    # --- Startup: initialize MinIO bucket ---
     await _init_storage()
-
-    # --- Startup: launch PostgreSQL LISTEN task ---
+    await init_checkpointer()
     listen_task = asyncio.create_task(_pg_listen_loop())
 
-    yield  # Application is running — handle requests
+    yield
 
-    # --- Shutdown: stop the LISTEN task ---
+    # --- Shutdown ---
     listen_task.cancel()
     try:
         await listen_task
     except asyncio.CancelledError:
         pass
+    await close_pool()
 
 
 def _init_langsmith() -> None:
