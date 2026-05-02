@@ -1,88 +1,123 @@
 """
-Authentication routes — Google OAuth 2.0 flow.
+Authentication routes — Google OAuth 2.0 flow (stateless, no server-side sessions).
 
 OAuth 2.0 Authorization Code Flow:
-  1. Client calls GET /auth/google  →  redirected to Google's consent screen.
-  2. User grants permission → Google redirects to GET /auth/callback?code=...
-  3. Backend exchanges the code for a Google access token.
-  4. Backend fetches the user's profile from Google (email, name, avatar).
-  5. Backend upserts the user in our DB (create on first login, fetch on subsequent).
-  6. Backend issues our own JWT and returns it to the frontend.
+  1. GET /auth/google  →  generates a signed state cookie + redirects to Google.
+  2. User grants permission → Google redirects to GET /auth/callback?code=...&state=...
+  3. Backend verifies state cookie, exchanges code for tokens via Google's token endpoint.
+  4. Backend fetches user profile, upserts the user in our DB.
+  5. Backend issues our JWT as an HttpOnly cookie and redirects to the frontend.
 
-Why a backend-handled OAuth flow (not NextAuth.js on the frontend)?
-  - Keeps Google credentials (client_secret) on the server — never exposed to browser.
-  - The JWT is stored in an HttpOnly cookie, protecting against XSS attacks.
-  - The FastAPI backend remains the single source of truth for auth.
-
-Library: Authlib — the most complete OAuth2 library for Python.
+State management: instead of server-side sessions (which require SessionMiddleware and
+sticky sessions), we store the OAuth state in a short-lived signed HttpOnly cookie.
+The state is validated in the callback before the code exchange.
 """
 
-from authlib.integrations.starlette_client import OAuth
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+import secrets
+from urllib.parse import urlencode
+
+import httpx
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.security import create_access_token
 from app.core.dependencies import CurrentUser, DB
+from app.core.security import create_access_token
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.user import UserOut
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-# Configure Authlib OAuth client with Google's OIDC endpoints
-oauth = OAuth()
-oauth.register(
-    name="google",
-    client_id=settings.GOOGLE_CLIENT_ID,
-    client_secret=settings.GOOGLE_CLIENT_SECRET,
-    # server_metadata_url fetches Google's well-known OIDC config automatically
-    # (authorization_endpoint, token_endpoint, userinfo_endpoint, etc.)
-    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-    client_kwargs={
-        "scope": "openid email profile",  # Request basic profile + email from Google
-    },
-)
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
+
+_is_https = settings.BACKEND_URL.startswith("https")
 
 
 @router.get("/google", summary="Initiate Google OAuth login")
-async def login_google(request: Request):
+async def login_google():
     """
     Redirect the user to Google's OAuth consent screen.
 
-    The redirect_uri must match one of the URIs registered in Google Cloud Console.
-    After the user grants permission, Google redirects back to /auth/callback.
+    Generates a random state token, sets it as a short-lived HttpOnly cookie
+    (no server-side session required), and redirects to Google.
     """
+    state = secrets.token_urlsafe(32)
     redirect_uri = f"{settings.BACKEND_URL}/api/v1/auth/callback"
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+    params = {
+        "client_id": settings.GOOGLE_CLIENT_ID,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "access_type": "offline",
+    }
+
+    redirect = RedirectResponse(url=f"{GOOGLE_AUTH_URL}?{urlencode(params)}")
+    redirect.set_cookie(
+        key="oauth_state",
+        value=state,
+        httponly=True,
+        secure=_is_https,
+        samesite="lax",
+        max_age=300,  # 5 minutes — more than enough to complete the OAuth flow
+    )
+    return redirect
 
 
 @router.get("/callback", summary="Google OAuth callback")
-async def auth_callback(request: Request, response: Response, db: DB):
+async def auth_callback(
+    request: Request,
+    db: DB,
+    code: str,
+    state: str,
+    oauth_state: str | None = Cookie(default=None),
+):
     """
     Handle the OAuth callback from Google.
 
-    Exchanges the authorization code for tokens, fetches the user profile,
-    upserts the user in our database, and issues a JWT stored as an HttpOnly cookie.
-
-    The HttpOnly flag prevents JavaScript from reading the cookie (XSS protection).
-    Redirects the browser to the frontend dashboard after successful login.
+    Verifies the state cookie, exchanges the authorization code for tokens,
+    fetches the user profile, upserts the user, and issues our JWT as an
+    HttpOnly cookie before redirecting to the frontend dashboard.
     """
-    # Exchange the authorization code for an access token + ID token
-    token = await oauth.google.authorize_access_token(request)
+    if not oauth_state or state != oauth_state:
+        raise HTTPException(status_code=400, detail="Invalid OAuth state — possible CSRF attack")
 
-    # Extract the user profile from the ID token (already verified by Authlib)
-    user_info = token.get("userinfo")
-    if not user_info:
-        raise HTTPException(status_code=400, detail="Could not retrieve user info from Google")
+    redirect_uri = f"{settings.BACKEND_URL}/api/v1/auth/callback"
 
-    email: str = user_info["email"]
+    async with httpx.AsyncClient() as client:
+        token_resp = await client.post(GOOGLE_TOKEN_URL, data={
+            "client_id": settings.GOOGLE_CLIENT_ID,
+            "client_secret": settings.GOOGLE_CLIENT_SECRET,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": redirect_uri,
+        })
+
+    token_data = token_resp.json()
+    access_token = token_data.get("access_token")
+    if not access_token:
+        raise HTTPException(status_code=400, detail="Failed to obtain access token from Google")
+
+    async with httpx.AsyncClient() as client:
+        userinfo_resp = await client.get(
+            GOOGLE_USERINFO_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+    user_info = userinfo_resp.json()
+    email: str = user_info.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Could not retrieve email from Google")
+
     name: str = user_info.get("name", email)
     avatar_url: str | None = user_info.get("picture")
 
-    # Upsert the user: fetch existing or create new on first login
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
@@ -92,22 +127,20 @@ async def auth_callback(request: Request, response: Response, db: DB):
         await db.commit()
         await db.refresh(user)
     else:
-        # Update profile info in case the user changed their Google name or avatar
         user.name = name
         user.avatar_url = avatar_url
         await db.commit()
 
-    # Issue our own JWT — from this point the app is independent of Google
-    access_token = create_access_token(str(user.id))
+    jwt_token = create_access_token(str(user.id))
 
-    # Redirect to the frontend dashboard with the token set as an HttpOnly cookie
     redirect = RedirectResponse(url=f"{settings.FRONTEND_URL}/board")
+    redirect.delete_cookie("oauth_state")
     redirect.set_cookie(
         key="access_token",
-        value=access_token,
-        httponly=True,   # Not accessible via document.cookie — XSS protection
-        secure=False,    # Set to True in production (requires HTTPS)
-        samesite="lax",  # Protects against CSRF while allowing top-level navigation
+        value=jwt_token,
+        httponly=True,
+        secure=_is_https,
+        samesite="lax",
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
     return redirect
@@ -115,23 +148,12 @@ async def auth_callback(request: Request, response: Response, db: DB):
 
 @router.post("/logout", summary="Invalidate session")
 async def logout(response: Response):
-    """
-    Clear the session cookie, effectively logging the user out.
-
-    Note: JWTs are stateless — we can't truly "invalidate" them on the server.
-    Clearing the cookie prevents the browser from sending the token in future requests.
-    For stricter security, a token blocklist (Redis) could be added.
-    """
+    """Clear the JWT cookie, logging the user out."""
     response.delete_cookie("access_token")
     return {"message": "Logged out successfully"}
 
 
 @router.get("/me", response_model=UserOut, summary="Get current user profile")
 async def get_me(current_user: CurrentUser):
-    """
-    Return the authenticated user's profile.
-
-    Used by the frontend on page load to check if the session is still valid
-    and to populate the user avatar/name in the header.
-    """
+    """Return the authenticated user's profile."""
     return current_user
