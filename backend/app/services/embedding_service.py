@@ -51,7 +51,11 @@ async def generate_embedding(
         from google import genai
         from google.genai import types as genai_types
 
-        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+        # Use stable v1 API — text-embedding-004 is not available in v1beta
+        client = genai.Client(
+            api_key=settings.GOOGLE_API_KEY,
+            http_options=genai_types.HttpOptions(api_version="v1"),
+        )
 
         result = await asyncio.to_thread(
             client.models.embed_content,
