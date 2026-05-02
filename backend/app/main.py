@@ -160,6 +160,7 @@ app.add_middleware(
     allow_origins=[
         settings.FRONTEND_URL,
         "http://localhost:3000",
+        "https://frontend-eight-chi-54.vercel.app",
     ],
     allow_credentials=True,  # Required for cookie-based auth
     allow_methods=["*"],
