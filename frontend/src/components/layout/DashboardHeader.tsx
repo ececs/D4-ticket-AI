@@ -45,8 +45,17 @@ export function DashboardHeader({ token }: DashboardHeaderProps) {
   useNotifications();
 
   const handleLogout = async () => {
-    await api.post("/auth/logout").catch(() => {});
+    try {
+      await api.post("/auth/logout");
+    } catch (err) {
+      // Ignore errors if backend is unreachable
+    }
+    // Manually clear the cookie just in case (essential for the Demo flow)
+    document.cookie = "access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;";
+    
+    // Redirect and force a full refresh to clear any state
     router.push("/login");
+    window.location.reload();
   };
 
   return (
