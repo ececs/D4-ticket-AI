@@ -46,8 +46,10 @@ export function useWebSocket(token: string | null) {
 
       socket.onmessage = (event) => {
         try {
-          const notification = JSON.parse(event.data) as Notification;
-          addNotification(notification);
+          const data = JSON.parse(event.data) as Record<string, unknown>;
+          // Ignore keepalive pings and any message without the required fields
+          if (data.type === "ping" || !data.id || !data.ticket_id) return;
+          addNotification(data as unknown as Notification);
         } catch {
           // Ignore malformed messages
         }

@@ -32,6 +32,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
   const { handleMarkAsRead, handleMarkAllAsRead } = useNotifications();
 
   const handleItemClick = async (id: string, ticketId: string) => {
+    if (!ticketId) return; // Guard: never navigate to /tickets/undefined
     await handleMarkAsRead(id);
     onClose();
     router.push(`/tickets/${ticketId}`);
