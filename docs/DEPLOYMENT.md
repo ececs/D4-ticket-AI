@@ -94,7 +94,7 @@ In your Railway backend service → **Variables** tab, add:
 
 | Variable | Value |
 |---|---|
-| `DATABASE_URL` | `postgresql+asyncpg://<user>:<password>@<host>:<port>/<db>` *(copy the Railway PostgreSQL URL and add `+asyncpg` after `postgresql`)* |
+| `DATABASE_URL` | `postgresql+asyncpg://<user>:<password>@<host>:<port>/<db>` *(Use the **Internal/Private** Database URL from Railway and add `+asyncpg` after `postgresql` for better performance and cost)* |
 | `SECRET_KEY` | Generate with: `python -c "import secrets; print(secrets.token_hex(32))"` |
 | `GOOGLE_CLIENT_ID` | From Step 1 |
 | `GOOGLE_CLIENT_SECRET` | From Step 1 |

@@ -37,3 +37,6 @@ backend/alembic/__pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Private Docs
+docs_private/
