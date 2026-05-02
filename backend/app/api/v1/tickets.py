@@ -185,6 +185,14 @@ async def update_ticket(
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
+    # --- Authorization Check ---
+    # Only the author or the assignee can update the ticket
+    if ticket.author_id != current_user.id and ticket.assignee_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permiso para modificar este ticket."
+        )
+
     old_status = ticket.status
     old_assignee_id = ticket.assignee_id
 
@@ -226,6 +234,14 @@ async def delete_ticket(ticket_id: uuid.UUID, db: DB, current_user: CurrentUser)
     ticket = result.scalar_one_or_none()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+
+    # --- Authorization Check ---
+    # Only the author can delete the ticket
+    if ticket.author_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el autor puede eliminar este ticket."
+        )
 
     await db.delete(ticket)
     await db.commit()

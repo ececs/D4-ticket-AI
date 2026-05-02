@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = ""
     FRONTEND_URL: str = "http://localhost:3000"
     BACKEND_URL: str = "http://localhost:8000"
+    
+    # List of emails allowed to log in. Use ["*"] to allow anyone.
+    # Supports domains: use "@domain.com" to allow everyone from that org.
+    # In production, set this to your email and "@orbidi.com".
+    ALLOWED_EMAILS: list[str] = ["*"]
 
     # --- File Storage (S3-compatible via boto3) ---
     # Local dev: MinIO container. Production: Cloudflare R2 (same boto3 code, different endpoint)

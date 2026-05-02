@@ -115,6 +115,26 @@ async def auth_callback(
     if not email:
         raise HTTPException(status_code=400, detail="Could not retrieve email from Google")
 
+    # --- Whitelist Check ---
+    allowed = False
+    if settings.ALLOWED_EMAILS == ["*"]:
+        allowed = True
+    else:
+        for pattern in settings.ALLOWED_EMAILS:
+            if pattern.startswith("@") and email.endswith(pattern):
+                allowed = True
+                break
+            if email == pattern:
+                allowed = True
+                break
+
+    if not allowed:
+        logger.warning(f"Restricted access attempt by: {email}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Acceso restringido. Tu correo o dominio no está en la lista de permitidos."
+        )
+
     name: str = user_info.get("name", email)
     avatar_url: str | None = user_info.get("picture")
 
