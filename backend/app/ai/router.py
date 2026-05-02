@@ -160,7 +160,6 @@ async def chat(
                         if not hasattr(event_stream, "_debug_sent"):
                             content = f"*(Modo: {active_model})* " + content
                             setattr(event_stream, "_debug_sent", True)
-                            v_logger.info("AI Token Flow: Stream started...")
                             
                         yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
 
