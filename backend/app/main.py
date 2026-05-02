@@ -29,6 +29,7 @@ from app.api.v1 import auth, tickets, comments, attachments, users, notification
 from app.ai import router as ai_router
 from app.ai.checkpoint import init_checkpointer, close_pool
 from app.services.cache_service import init_cache, close_cache
+from app.services import pubsub_service
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,13 @@ async def lifespan(app: FastAPI):
     await _init_storage()
     await init_checkpointer()
     await init_cache()
-    listen_task = asyncio.create_task(_pg_listen_loop())
+    # Redis Pub/Sub when available; PG LISTEN/NOTIFY as fallback
+    if pubsub_service.is_redis_available():
+        logger.info("Real-time transport: Redis Pub/Sub")
+        listen_task = asyncio.create_task(pubsub_service.redis_listen_loop())
+    else:
+        logger.info("Real-time transport: PostgreSQL LISTEN/NOTIFY")
+        listen_task = asyncio.create_task(_pg_listen_loop())
 
     yield
 

@@ -27,23 +27,13 @@ from sqlalchemy import select, text
 from app.models.notification import Notification, NotificationType
 from app.models.ticket import Ticket
 from app.models.user import User
+from app.services import pubsub_service
 
 
 async def _pg_notify(db: AsyncSession, user_id: str, payload: dict) -> None:
-    """
-    Send a PostgreSQL NOTIFY on the 'notifications' channel.
-
-    asyncpg's LISTEN in main.py receives this and immediately broadcasts
-    the payload to the user's open WebSocket connections.
-
-    Args:
-        db: The current database session (used to run the NOTIFY statement).
-        user_id: Target user UUID string (included in payload for routing).
-        payload: Dict that will be JSON-serialized and sent as the NOTIFY payload.
-    """
+    """Send a raw PostgreSQL NOTIFY — used as fallback when Redis is unavailable."""
     payload["user_id"] = user_id
     payload_str = json.dumps(payload)
-    # Use text() to safely pass the payload as a parameter — no SQL injection risk
     await db.execute(
         text("SELECT pg_notify('notifications', :payload)"),
         {"payload": payload_str},
@@ -80,15 +70,20 @@ async def _create_notification(
     # Flush so the notification gets an id before we send NOTIFY
     await db.flush()
 
-    # Notify connected WebSocket clients immediately
-    await _pg_notify(db, str(user_id), {
+    # Publish to connected WebSocket clients (Redis Pub/Sub or PG NOTIFY fallback)
+    event = {
+        "user_id": str(user_id),
         "id": str(notification.id),
         "type": notification_type.value,
         "ticket_id": str(ticket_id),
         "message": message,
         "read": False,
         "created_at": notification.created_at.isoformat(),
-    })
+    }
+    if pubsub_service.is_redis_available():
+        await pubsub_service.publish(event)
+    else:
+        await _pg_notify(db, str(user_id), event)
 
     return notification
 
