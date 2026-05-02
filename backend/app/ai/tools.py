@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.ticket import Ticket, TicketStatus, TicketPriority
 from app.models.user import User
 from app.models.comment import Comment
-from app.services import ticket_service, notification_service
+from app.services import ticket_service, notification_service, knowledge_service
 
 
 def make_tools(db: AsyncSession, actor: User) -> list:
@@ -254,4 +254,25 @@ def make_tools(db: AsyncSession, actor: User) -> list:
         except Exception as e:
             return f"Error reassigning ticket: {e}"
 
-    return [query_tickets, get_ticket, create_ticket, change_status, add_comment, reassign_ticket]
+    @tool
+    async def search_knowledge(query: str, k: int = 5) -> str:
+        """
+        Search the internal knowledge base for information relevant to the query.
+
+        Use this tool when the user asks about documentation, processes, guides,
+        or any topic that may have been ingested from external URLs.
+
+        Args:
+            query: Natural language question or search phrase.
+            k: Number of relevant passages to retrieve (default 5, max 10).
+        """
+        try:
+            chunks = await knowledge_service.search(db, query, k=min(k, 10))
+            if not chunks:
+                return "No relevant knowledge found for that query."
+            passages = "\n\n---\n\n".join(chunks)
+            return f"Relevant knowledge ({len(chunks)} passage(s)):\n\n{passages}"
+        except Exception as e:
+            return f"Error searching knowledge base: {e}"
+
+    return [query_tickets, get_ticket, create_ticket, change_status, add_comment, reassign_ticket, search_knowledge]

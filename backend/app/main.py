@@ -25,7 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.websocket_manager import manager
-from app.api.v1 import auth, tickets, comments, attachments, users, notifications, ws
+from app.api.v1 import auth, tickets, comments, attachments, users, notifications, ws, knowledge
 from app.ai import router as ai_router
 from app.ai.checkpoint import init_checkpointer, close_pool
 
@@ -166,6 +166,7 @@ app.include_router(users.router, prefix="/api/v1")
 app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(ws.router)  # WebSocket doesn't follow the /api/v1 pattern
 app.include_router(ai_router.router, prefix="/api/v1")
+app.include_router(knowledge.router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["Health"])
