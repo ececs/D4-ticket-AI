@@ -188,8 +188,17 @@ async def chat(
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
         except Exception as e:
-            logger.error("Streaming error in chat: %s", str(e), exc_info=True)
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            error_msg = str(e)
+            logger.error("Streaming error in chat: %s", error_msg, exc_info=True)
+            
+            # User-friendly explanation for Quota/API issues
+            friendly_msg = error_msg
+            if "429" in error_msg or "quota" in error_msg.lower():
+                friendly_msg = "*(Sistema: Se ha alcanzado el límite de uso de la IA gratuita. Por favor, espera unos segundos o contacta con el administrador para activar el modo de respaldo.)*"
+            elif "api_key" in error_msg.lower() or "401" in error_msg:
+                friendly_msg = "*(Sistema: Error de configuración en la clave de la IA. Por favor, revisa las variables de entorno.)*"
+            
+            yield f"data: {json.dumps({'type': 'error', 'content': friendly_msg})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     return StreamingResponse(
