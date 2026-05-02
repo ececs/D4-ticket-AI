@@ -175,11 +175,21 @@ async def logout(response: Response):
 
 
 @router.post("/demo-login", summary="Login with a secret demo code")
-async def demo_login(body: DemoLoginRequest, db: DB):
+async def demo_login(request: Request, body: DemoLoginRequest, db: DB):
     """
     Allow access via a pre-configured secret code.
     Useful for evaluators who don't want to use Google OAuth.
     """
+    # --- Rate Limiting ---
+    # Max 5 attempts per 15 minutes per IP to prevent brute-force
+    ip = request.client.host if request.client else "unknown"
+    from app.services.cache_service import is_rate_limited
+    if await is_rate_limited(f"demo_login:{ip}", limit=5, window=900):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Demasiados intentos. Por favor, espera 15 minutos."
+        )
+
     if not settings.DEMO_ACCESS_CODE or body.code != settings.DEMO_ACCESS_CODE:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

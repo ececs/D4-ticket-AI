@@ -87,3 +87,28 @@ async def cache_invalidate_prefix(prefix: str) -> None:
             await _redis.delete(*keys)
     except Exception as exc:
         logger.debug("Cache INVALIDATE error for prefix %s: %s", prefix, exc)
+
+
+async def is_rate_limited(key: str, limit: int, window: int) -> bool:
+    """
+    Check if a key (e.g. IP or action_type:id) has exceeded a limit within a window (seconds).
+    
+    How it works (Fixed Window):
+      1. INCR the key.
+      2. If it's the first hit (value == 1), set the expiration (window).
+      3. If current value > limit, return True.
+    
+    If Redis is unavailable, this always returns False (graceful degradation).
+    """
+    if _redis is None:
+        return False
+    try:
+        # Key prefix for rate limiting to avoid collision with cache keys
+        rl_key = f"rl:{key}"
+        current = await _redis.incr(rl_key)
+        if current == 1:
+            await _redis.expire(rl_key, window)
+        return current > limit
+    except Exception as exc:
+        logger.debug("Rate limit error for %s: %s", rl_key, exc)
+        return False
