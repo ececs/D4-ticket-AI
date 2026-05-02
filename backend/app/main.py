@@ -13,6 +13,8 @@ The lifespan pattern (instead of deprecated @app.on_event) ensures cleanup code
 
 import asyncio
 import json
+import logging
+import os
 from contextlib import asynccontextmanager
 
 import asyncpg
@@ -22,6 +24,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 from app.core.websocket_manager import manager
 from app.api.v1 import auth, tickets, comments, attachments, users, notifications, ws
 from app.ai import router as ai_router
@@ -39,6 +43,9 @@ async def lifespan(app: FastAPI):
     Shutdown:
       - Cancel the LISTEN task cleanly (avoids asyncpg connection leaks).
     """
+    # --- Startup: configure LangSmith tracing (if enabled) ---
+    _init_langsmith()
+
     # --- Startup: initialize MinIO bucket ---
     await _init_storage()
 
@@ -53,6 +60,23 @@ async def lifespan(app: FastAPI):
         await listen_task
     except asyncio.CancelledError:
         pass
+
+
+def _init_langsmith() -> None:
+    """
+    Configure LangSmith tracing by propagating settings to the env vars that
+    LangChain reads automatically. This way the .env file works in dev and
+    Railway env vars work in production — both paths go through pydantic-settings.
+    """
+    if not settings.LANGSMITH_TRACING or not settings.LANGSMITH_API_KEY:
+        logger.info("LangSmith tracing disabled")
+        return
+
+    os.environ["LANGCHAIN_TRACING_V2"] = "true"
+    os.environ["LANGCHAIN_API_KEY"] = settings.LANGSMITH_API_KEY
+    os.environ["LANGCHAIN_PROJECT"] = settings.LANGSMITH_PROJECT
+    os.environ["LANGCHAIN_ENDPOINT"] = settings.LANGSMITH_ENDPOINT
+    logger.info("LangSmith tracing enabled — project: %s", settings.LANGSMITH_PROJECT)
 
 
 async def _init_storage() -> None:

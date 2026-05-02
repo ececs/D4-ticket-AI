@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
 
+    # --- Observability (LangSmith) ---
+    # Set LANGSMITH_TRACING=true + LANGSMITH_API_KEY in Railway to enable agent tracing.
+    # Traces every LLM call, tool invocation, latency, and token usage — zero code changes needed.
+    LANGSMITH_TRACING: bool = False
+    LANGSMITH_API_KEY: str = ""
+    LANGSMITH_PROJECT: str = "d4-ticket-ai"
+    LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
+
     # --- Business Rules ---
     MAX_ATTACHMENT_SIZE_MB: int = 10
     ALLOWED_MIME_TYPES: list[str] = [
