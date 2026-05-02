@@ -1,6 +1,7 @@
 FROM python:3.12-slim
 
 WORKDIR /app
+ENV PYTHONPATH=/app
 
 # Build tools required to compile asyncpg (a C extension) from source.
 # libpq-dev provides PostgreSQL client headers needed by some drivers.
