@@ -28,7 +28,7 @@ from app.db.base import Base
 
 try:
     from pgvector.sqlalchemy import Vector as _Vector
-    _EMBEDDING_TYPE = _Vector(3072)
+    _EMBEDDING_TYPE = _Vector(1536)
 except ImportError:
     # Fallback for environments without pgvector (e.g. CI without the extension)
     from sqlalchemy import LargeBinary
