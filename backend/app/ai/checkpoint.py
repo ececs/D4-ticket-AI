@@ -38,7 +38,16 @@ async def init_checkpointer() -> None:
 
         raw_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
 
-        _pool = AsyncConnectionPool(conninfo=raw_url, min_size=1, max_size=3, open=False)
+        # autocommit=True required: AsyncPostgresSaver.setup() uses CREATE INDEX
+        # CONCURRENTLY which cannot run inside a transaction block.
+        # prepare_threshold=0 disables prepared statements (incompatible with pgbouncer).
+        _pool = AsyncConnectionPool(
+            conninfo=raw_url,
+            min_size=1,
+            max_size=3,
+            open=False,
+            kwargs={"autocommit": True, "prepare_threshold": 0},
+        )
         await _pool.open(wait=True, timeout=10.0)
 
         _checkpointer = AsyncPostgresSaver(_pool)
