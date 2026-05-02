@@ -132,7 +132,7 @@ async def chat(
         yield f"data: {json.dumps({'type': 'session', 'thread_id': thread_id})}\n\n"
         
         # Immediate visual feedback: send a subtle "thinking" token to break buffering
-        yield f"data: {json.dumps({'type': 'content', 'content': ' '})}\n\n"
+        yield f"data: {json.dumps({'type': 'token', 'content': ' '})}\n\n"
 
         try:
             has_content = False
@@ -161,7 +161,7 @@ async def chat(
                             content = f"*(Modo: {active_model})* " + content
                             setattr(event_stream, "_debug_sent", True)
                             
-                        yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+                        yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
 
                 elif kind == "on_tool_start":
                     tool_name = event.get("name", "")
@@ -183,7 +183,7 @@ async def chat(
 
             if not has_content:
                 v_logger.warning("AI Stream finished with NO content. Sending safety message.")
-                yield f"data: {json.dumps({'type': 'content', 'content': '*(Sistema: Los modelos de IA no han respondido. Por favor, intenta de nuevo.)*'})}\n\n"
+                yield f"data: {json.dumps({'type': 'token', 'content': '*(Sistema: Los modelos de IA no han respondido. Por favor, intenta de nuevo.)*'})}\n\n"
 
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
