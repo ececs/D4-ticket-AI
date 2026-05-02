@@ -20,6 +20,7 @@ import boto3
 from botocore.exceptions import ClientError
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.core.config import settings
 from app.core.websocket_manager import manager
@@ -129,6 +130,10 @@ app = FastAPI(
     redoc_url="/redoc",    # ReDoc
     lifespan=lifespan,
 )
+
+# Session middleware required by Authlib to store OAuth state between
+# /auth/google redirect and /auth/callback verification.
+app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
 
 # CORS: allow the frontend origin to make cross-origin requests.
 # In production, replace origins with the actual Vercel URL.
