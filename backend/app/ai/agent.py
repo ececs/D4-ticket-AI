@@ -77,6 +77,7 @@ def get_llm() -> BaseChatModel:
             api_key=settings.OPENAI_API_KEY,  # type: ignore[arg-type]
             temperature=0,
             streaming=True,
+            request_timeout=30.0, # Don't wait more than 30s
         )
         # Apply automatic fallback logic: if Gemini fails, use OpenAI
         return gemini.with_fallbacks([openai])
