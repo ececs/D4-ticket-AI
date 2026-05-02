@@ -19,6 +19,8 @@ Embedding side-effects on writes:
 """
 
 import asyncio
+import hashlib
+import json
 import uuid
 from typing import Literal
 
@@ -31,7 +33,11 @@ from app.models.ticket import Ticket, TicketPriority, TicketStatus
 from app.models.user import User
 from app.schemas.ticket import TicketCreate, TicketListResponse, TicketOut, TicketUpdate
 from app.services import notification_service
+from app.services.cache_service import cache_get, cache_set, cache_invalidate_prefix
 from app.services.embedding_service import generate_embedding, generate_ticket_embedding
+
+CACHE_PREFIX = "tickets:"
+CACHE_TTL = 60  # seconds
 
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
 
@@ -57,6 +63,25 @@ async def list_tickets(
     page: int = Query(1, ge=1),
     size: int = Query(25, ge=1, le=100),
 ):
+    # Cache key = hash of all query params (search excluded to avoid stale semantic results)
+    cache_params = {
+        "status": status.value if status else None,
+        "priority": priority.value if priority else None,
+        "assignee_id": str(assignee_id) if assignee_id else None,
+        "search": search,
+        "sort_by": sort_by,
+        "order": order,
+        "page": page,
+        "size": size,
+    }
+    cache_key = CACHE_PREFIX + hashlib.md5(
+        json.dumps(cache_params, sort_keys=True).encode()
+    ).hexdigest()
+
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return TicketListResponse(**cached)
+
     query = select(Ticket).options(
         selectinload(Ticket.author),    # type: ignore[attr-defined]
         selectinload(Ticket.assignee),  # type: ignore[attr-defined]
@@ -102,7 +127,9 @@ async def list_tickets(
     result = await db.execute(query)
     tickets = result.scalars().all()
 
-    return TicketListResponse(items=list(tickets), total=total, page=page, size=size)
+    response = TicketListResponse(items=list(tickets), total=total, page=page, size=size)
+    await cache_set(cache_key, response.model_dump(mode="json"), ttl=CACHE_TTL)
+    return response
 
 
 @router.post("", response_model=TicketOut, status_code=status.HTTP_201_CREATED, summary="Create a ticket")
@@ -132,8 +159,8 @@ async def create_ticket(body: TicketCreate, db: DB, current_user: CurrentUser):
     await db.commit()
     await db.refresh(ticket)
 
-    # Generate embedding asynchronously — doesn't block the response
     asyncio.create_task(_embed_ticket(ticket.id, body.title, body.description))
+    await cache_invalidate_prefix(CACHE_PREFIX)
 
     return await _get_ticket_with_relations(db, ticket.id)
 
@@ -182,12 +209,13 @@ async def update_ticket(
 
     await db.commit()
 
-    # Regenerate embedding if searchable content changed
     text_changed = body.title is not None or body.description is not None
     if text_changed:
         new_title = body.title or ticket.title
         new_desc = body.description if body.description is not None else ticket.description
         asyncio.create_task(_embed_ticket(ticket_id, new_title, new_desc))
+
+    await cache_invalidate_prefix(CACHE_PREFIX)
 
     return await _get_ticket_with_relations(db, ticket_id)
 
@@ -201,6 +229,7 @@ async def delete_ticket(ticket_id: uuid.UUID, db: DB, current_user: CurrentUser)
 
     await db.delete(ticket)
     await db.commit()
+    await cache_invalidate_prefix(CACHE_PREFIX)
 
 
 # ─── Private helpers ──────────────────────────────────────────────────────────

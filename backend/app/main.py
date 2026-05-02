@@ -28,6 +28,7 @@ from app.core.websocket_manager import manager
 from app.api.v1 import auth, tickets, comments, attachments, users, notifications, ws, knowledge
 from app.ai import router as ai_router
 from app.ai.checkpoint import init_checkpointer, close_pool
+from app.services.cache_service import init_cache, close_cache
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ async def lifespan(app: FastAPI):
     _init_langsmith()
     await _init_storage()
     await init_checkpointer()
+    await init_cache()
     listen_task = asyncio.create_task(_pg_listen_loop())
 
     yield
@@ -49,6 +51,7 @@ async def lifespan(app: FastAPI):
     except asyncio.CancelledError:
         pass
     await close_pool()
+    await close_cache()
 
 
 def _init_langsmith() -> None:

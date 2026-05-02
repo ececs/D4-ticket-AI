@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     LANGSMITH_PROJECT: str = "d4-ticket-ai"
     LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
 
+    # --- Redis Cache ---
+    # Optional: set REDIS_URL to enable caching on the ticket list endpoint.
+    # If empty, the endpoint runs without cache (graceful degradation).
+    REDIS_URL: str = ""
+
     # --- Business Rules ---
     MAX_ATTACHMENT_SIZE_MB: int = 10
     ALLOWED_MIME_TYPES: list[str] = [
