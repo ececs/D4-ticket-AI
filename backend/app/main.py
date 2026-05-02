@@ -163,4 +163,4 @@ app.include_router(ai_router.router, prefix="/api/v1")
 @app.get("/health", tags=["Health"])
 async def health_check():
     """Simple health endpoint for Docker/Railway health checks."""
-    return {"status": "ok"}
+    return {"status": "ok", "version": "0.1.1"}
