@@ -32,12 +32,17 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor: redirect to login on 401.
+// Response interceptor: on 401, redirect to /api/auth/clear which deletes the
+// session cookie server-side (JS cannot delete httpOnly cookies) before sending
+// the user to /login. This breaks the middleware redirect loop caused by stale
+// httpOnly cookies.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401 && typeof window !== "undefined") {
-      window.location.href = "/login";
+      if (!window.location.pathname.startsWith("/api/auth")) {
+        window.location.href = "/api/auth/clear";
+      }
     }
     return Promise.reject(error);
   }
