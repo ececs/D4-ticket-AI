@@ -126,13 +126,22 @@ export function useTickets(filters: TicketFilters = {}): UseTicketsReturn {
   }, []);
 
   /**
-   * Delete a ticket and remove it from the local list.
+   * Optimistically remove the ticket from the local list, then call the API.
+   * If the API call fails, the previous list is restored (rollback).
    */
   const deleteTicket = useCallback(async (ticketId: string) => {
-    await api.delete(`/tickets/${ticketId}`);
+    const snapshot = tickets;
     setTickets((prev) => prev.filter((t) => t.id !== ticketId));
     setTotal((n) => n - 1);
-  }, []);
+
+    try {
+      await api.delete(`/tickets/${ticketId}`);
+    } catch (err) {
+      setTickets(snapshot);
+      setTotal((n) => n + 1);
+      throw err;
+    }
+  }, [tickets]);
 
   return { tickets, total, isLoading, error, refetch, updateTicketStatus, updateTicket, deleteTicket };
 }

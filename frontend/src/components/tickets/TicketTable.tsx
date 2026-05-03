@@ -80,10 +80,11 @@ export function TicketTable({
   };
 
   const handleConfirmDelete = async () => {
-    if (pendingDeleteId) {
-      await onDeleteTicket(pendingDeleteId);
-    }
+    const id = pendingDeleteId;
     setPendingDeleteId(null);
+    if (id) {
+      await onDeleteTicket(id);
+    }
   };
 
   const ColHeader = ({ field, label }: { field: SortField; label: string }) => (

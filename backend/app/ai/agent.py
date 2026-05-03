@@ -14,6 +14,7 @@ System prompt:
   always reply in the same language the user wrote in (Spanish or English).
 """
 
+import logging
 from langchain_core.messages import SystemMessage
 from langchain_core.language_models import BaseChatModel
 from langgraph.prebuilt import create_react_agent
@@ -24,6 +25,9 @@ from app.models.user import User
 from app.ai.tools import make_tools
 from app.ai.checkpoint import get_checkpointer
 from app.ai.state import AgentState
+
+logger = logging.getLogger(__name__)
+_llm_singleton: BaseChatModel | None = None
 
 
 SYSTEM_PROMPT = """You are an AI assistant for D4-Ticket AI, a professional ticketing system.
@@ -62,17 +66,21 @@ Guidelines:
 
 def get_llm() -> BaseChatModel:
     """
-    Construct the LLM with automatic fallback.
-    Primary: Gemini 2.0 Flash (Fast & Modern)
-    Fallback: OpenAI GPT-4o-mini (Reliable & Cheap)
+    Return the LLM singleton, building it on first call.
+    Primary: Gemini 2.0 Flash — Fallback: OpenAI GPT-4o-mini.
+    Cached at module level to avoid re-instantiating HTTP clients per request.
     """
-    # 1. Initialize Primary LLM
-    import logging
-    logger = logging.getLogger(__name__)
+    global _llm_singleton
+    if _llm_singleton is not None:
+        return _llm_singleton
+    _llm_singleton = _build_llm()
+    return _llm_singleton
 
-    # Use the provider and model from settings
+
+def _build_llm() -> BaseChatModel:
     primary_model = settings.AI_MODEL or "gemini-2.0-flash"
-    
+
+    # 1. Primary LLM
     if settings.AI_PROVIDER == "google":
         if not settings.GOOGLE_API_KEY:
             raise ValueError("GOOGLE_API_KEY no encontrada. Revisa tu archivo .env en la carpeta backend.")
@@ -82,7 +90,7 @@ def get_llm() -> BaseChatModel:
             google_api_key=settings.GOOGLE_API_KEY,
             temperature=0,
             streaming=True,
-            max_retries=0, # Fail fast to trigger fallback
+            max_retries=0,  # fail fast to trigger fallback
         )
     else:
         if not settings.OPENAI_API_KEY:
@@ -95,26 +103,30 @@ def get_llm() -> BaseChatModel:
             streaming=True,
         )
 
-    # 2. Initialize Fallback LLM (OpenAI gpt-4o-mini is our reliable safety net)
-    if settings.AI_PROVIDER == "google":
-        if settings.OPENAI_API_KEY:
-            try:
-                from langchain_openai import ChatOpenAI
-                fallback_llm = ChatOpenAI(
-                    model="gpt-4o-mini",
-                    api_key=settings.OPENAI_API_KEY,
-                    temperature=0,
-                    streaming=True,
-                    request_timeout=30.0,
-                )
-                logger.info(f"AI Agent: Using {primary_model} with OpenAI fallback")
-                return primary_llm.with_fallbacks([fallback_llm])
-            except ImportError:
-                logger.warning("AI Agent: langchain-openai not installed. Fallback disabled.")
-        else:
-            logger.warning("AI Agent: No OpenAI API Key found. Fallback disabled.")
-    
-    logger.info(f"AI Agent: Using {primary_model} (no fallback)")
+    # 2. Fallback LLM — only for transient errors (network, quota), not config errors
+    if settings.AI_PROVIDER == "google" and settings.OPENAI_API_KEY:
+        try:
+            from langchain_openai import ChatOpenAI
+            import httpx
+            fallback_llm = ChatOpenAI(
+                model="gpt-4o-mini",
+                api_key=settings.OPENAI_API_KEY,
+                temperature=0,
+                streaming=True,
+                request_timeout=30.0,
+            )
+            logger.info("AI Agent: %s (with GPT-4o-mini fallback)", primary_model)
+            return primary_llm.with_fallbacks(
+                [fallback_llm],
+                exceptions_to_handle=(Exception,),
+                exception_key="error",
+            )
+        except ImportError:
+            logger.warning("AI Agent: langchain-openai not installed — fallback disabled.")
+    elif settings.AI_PROVIDER == "google":
+        logger.warning("AI Agent: OPENAI_API_KEY not set — fallback disabled.")
+
+    logger.info("AI Agent: %s (no fallback)", primary_model)
     return primary_llm
 
 
