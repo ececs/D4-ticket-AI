@@ -13,8 +13,8 @@ Este documento monitoriza el cumplimiento estricto de los requisitos del reto t�
 | **Comentarios** | ✅ | Formato texto, cronológicos, con autor y timestamp. |
 | **Adjuntos (Archivos)** | ✅ | Subir, listar, descargar y eliminar. Límite 10MB. |
 | **Reasignación** | ✅ | Cambio inmediato reflejado en Lista y Kanban. |
-| **Sistema de Alertas (In-app)** | 🔄 | Notificaciones por asignación, comentario y estado. |
-| **Indicador de Alertas (Badge)** | 🔄 | Contador visible de notificaciones sin leer. |
+| **Sistema de Alertas (In-app)** | ✅ | Notificaciones por asignación, comentario y estado. |
+| **Indicador de Alertas (Badge)** | ✅ | Contador visible de notificaciones sin leer. |
 
 ## 2. Requisitos Técnicos (Stack & DevOps)
 | Requisito | Estado | Detalles Técnicos |
@@ -23,7 +23,7 @@ Este documento monitoriza el cumplimiento estricto de los requisitos del reto t�
 | **Frontend: Next.js** | ✅ | App Router 15+ y Zustand para estado global. |
 | **Base de Datos: PostgreSQL** | ✅ | Persistencia íntegra con SQLAlchemy + pgvector. |
 | **Almacenamiento: S3/R2** | ✅ | Integración con Cloudflare R2 (Desacoplado). |
-| **Levantamiento Local (README)** | 🔄 | Documentación de .env y comandos de ejecución. |
+| **Levantamiento Local (README)** | ✅ | Documentación detallada de Docker, .env y ejecución local. |
 
 ## 3. Bonus Point: Asistente de IA (Especialidad)
 | Requisito | Estado | Detalles Técnicos |

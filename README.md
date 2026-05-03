@@ -35,50 +35,58 @@
 
 ---
 
-### ⚙️ Configuración Local
+### ⚙️ Levantamiento Local
 
-#### Requisitos Previos
-*   Docker & Docker Compose
-*   Python 3.12+ (si se corre manual)
-*   Node.js 20+
+El sistema está diseñado para ser agnóstico al entorno, pero se recomienda el uso de **Docker** para una experiencia "zero-config" de los servicios de infraestructura (Postgres, Redis, MinIO).
 
-#### Variables de Entorno (.env)
-Crea un archivo `.env` en la raíz (o dentro de `/backend` y `/frontend`) con:
+#### Opción A: Docker Compose (Recomendado 🚀)
+Esta opción levanta todo el stack (Frontend, Backend, DB, Redis, MinIO) con un solo comando.
 
-```env
-# Backend
-DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/railway
-SECRET_KEY=tu_secreto_super_seguro
-GOOGLE_API_KEY=tu_key_de_google_ai_studio
-OPENAI_API_KEY=tu_key_de_openai (opcional, para failover)
-DEMO_ACCESS_CODE=orbidi2024  # Código para el login de evaluador
+1.  **Configurar Entorno**:
+    ```bash
+    cp .env.example .env
+    # Edita .env y añade al menos tu GOOGLE_API_KEY
+    ```
+2.  **Iniciar el Stack**:
+    ```bash
+    docker-compose up --build
+    ```
+3.  **Acceso**:
+    -   Frontend: [http://localhost:3000](http://localhost:3000)
+    -   Backend API: [http://localhost:8000](http://localhost:8000)
+    -   Documentación API: [http://localhost:8000/docs](http://localhost:8000/docs)
+    -   Consola MinIO (Storage): [http://localhost:9001](http://localhost:9001)
 
-# Storage (Cloudflare R2)
-R2_BUCKET_NAME=tu_bucket
-R2_ENDPOINT_URL=https://tu_id.r2.cloudflarestorage.com
-R2_ACCESS_KEY_ID=tu_key
-R2_SECRET_ACCESS_KEY=tu_secret
+#### Opción B: Ejecución Manual (Desarrollo)
+Si prefieres correr el código fuera de Docker (por ejemplo, para depuración profunda):
 
-# Frontend
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
-#### Inicio Rápido (Docker)
+**Backend**:
 ```bash
-docker-compose up --build
+cd backend
+python -m venv .venv
+source .venv/bin/activate  # (ó .\.venv\Scripts\activate en Windows)
+pip install -e .
+alembic upgrade head
+uvicorn app.main:app --reload
 ```
-*   Frontend: `http://localhost:3000`
-*   Backend API: `http://localhost:8000`
-*   Acceso Demo: Usa el botón "Demo Access" con el código configurado en tu `.env`.
+
+**Frontend**:
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
 ---
 
-### 🏗️ Arquitectura Senior
-El sistema implementa patrones de diseño avanzados:
-*   **Service Layer Pattern**: Lógica de negocio desacoplada de los controladores API.
-*   **Repository Pattern**: Abstracción de acceso a datos para facilitar testing.
-*   **State Machine (LangGraph)**: Ciclos de razonamiento de la IA con memoria persistente.
-*   **Real-time Transport**: Detección automática de transporte (Redis -> Postgres) para eventos.
+### 🔑 Variables de Entorno Clave
+
+| Variable | Descripción | Valor Local (Docker) |
+| :--- | :--- | :--- |
+| `DATABASE_URL` | Conexión a Postgres | `postgresql+asyncpg://postgres:postgres@db:5432/ticketai` |
+| `REDIS_URL` | Conexión a Redis | `redis://redis:6379` |
+| `GOOGLE_API_KEY` | Key de Google AI Studio | *Tu API Key* |
+| `DEMO_ACCESS_CODE`| Código para modo demo | `orbidi2024` (por defecto) |
 
 ---
 
