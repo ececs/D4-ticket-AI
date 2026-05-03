@@ -57,6 +57,8 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
 
   // Attachment upload state
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  
   // AI Diagnosis state
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const [aiDiagnosis, setAiDiagnosis] = useState<string | null>(null);
