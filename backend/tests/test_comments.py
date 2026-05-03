@@ -121,3 +121,59 @@ async def test_delete_nonexistent_comment_returns_404(client: AsyncClient):
     ticket = await _create_ticket(client)
     r = await client.delete(f"/api/v1/tickets/{ticket['id']}/comments/{uuid.uuid4()}")
     assert r.status_code == 404
+
+
+# ── auth guards ───────────────────────────────────────────────────────────────
+
+async def test_create_comment_without_auth_returns_401(unauth_client: AsyncClient):
+    r = await unauth_client.post(
+        f"/api/v1/tickets/{uuid.uuid4()}/comments", json={"content": "Unauthorized"}
+    )
+    assert r.status_code == 401
+
+
+async def test_list_comments_without_auth_returns_401(unauth_client: AsyncClient):
+    r = await unauth_client.get(f"/api/v1/tickets/{uuid.uuid4()}/comments")
+    assert r.status_code == 401
+
+
+async def test_delete_comment_without_auth_returns_401(unauth_client: AsyncClient):
+    r = await unauth_client.delete(
+        f"/api/v1/tickets/{uuid.uuid4()}/comments/{uuid.uuid4()}"
+    )
+    assert r.status_code == 401
+
+
+# ── validation ────────────────────────────────────────────────────────────────
+
+async def test_create_comment_missing_content_returns_422(client: AsyncClient):
+    ticket = await _create_ticket(client)
+    r = await client.post(f"/api/v1/tickets/{ticket['id']}/comments", json={})
+    assert r.status_code == 422
+
+
+async def test_create_comment_invalid_ticket_uuid_returns_422(client: AsyncClient):
+    r = await client.post(
+        "/api/v1/tickets/not-a-uuid/comments", json={"content": "Hello"}
+    )
+    assert r.status_code == 422
+
+
+# ── response shape ────────────────────────────────────────────────────────────
+
+async def test_comment_response_has_timestamps(client: AsyncClient):
+    """Comments must expose created_at for audit trail."""
+    ticket = await _create_ticket(client)
+    data = await _create_comment(client, ticket["id"])
+    assert "created_at" in data
+    assert data["created_at"] is not None
+
+
+async def test_comment_response_has_required_fields(client: AsyncClient, test_user: User):
+    """Comment schema: id, content, author, created_at."""
+    ticket = await _create_ticket(client)
+    data = await _create_comment(client, ticket["id"], "Full response test")
+    for field in ("id", "content", "author", "created_at"):
+        assert field in data, f"Missing field: {field}"
+    assert data["author"]["id"] == str(test_user.id)
+    assert data["author"]["name"] == test_user.name
