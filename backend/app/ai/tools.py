@@ -32,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.ticket import Ticket, TicketStatus, TicketPriority
 from app.models.user import User
 from app.models.comment import Comment
-from app.services import ticket_service, notification_service, knowledge_service, comment_service
+from app.services import ticket_service, notification_service, knowledge_service, comment_service, ai_copilot_service
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +68,9 @@ class ReassignTicketSchema(BaseModel):
 class SearchKnowledgeSchema(BaseModel):
     query: str = Field(..., description="The question or search phrase")
     k: int = Field(5, ge=1, le=10, description="Number of passages to retrieve")
+
+class AIDiagnoseSchema(BaseModel):
+    ticket_id: str = Field(..., description="UUID of the ticket to diagnose")
 
 # --- Tool Factory ---
 
@@ -141,9 +144,14 @@ def make_tools(db: AsyncSession, actor: User) -> List:
                 if not user: return f"User {assignee_email} not found."
                 assignee_id = user.id
 
-            ticket = Ticket(title=title, description=description, priority=prio, author_id=actor.id, assignee_id=assignee_id)
-            db.add(ticket)
-            await db.commit()
+            ticket = await ticket_service.create_ticket(
+                db, 
+                title=title, 
+                description=description, 
+                priority=prio, 
+                author_id=actor.id, 
+                assignee_id=assignee_id
+            )
             return f"Ticket created. ID: {ticket.id}"
         except Exception as e:
             return f"Error: {e}"
@@ -199,4 +207,26 @@ def make_tools(db: AsyncSession, actor: User) -> List:
         except Exception as e:
             return f"Error: {e}"
 
-    return [query_tickets, get_ticket, create_ticket, change_status, add_comment, reassign_ticket, search_knowledge]
+    @tool(args_schema=AIDiagnoseSchema)
+    async def ai_diagnose_ticket(ticket_id: str) -> str:
+        """
+        AI Co-pilot: Generate a detailed diagnosis and suggested solution for a ticket.
+        Uses ticket context, comment history, and knowledge base (RAG).
+        """
+        try:
+            tid = uuid.UUID(ticket_id)
+            diagnosis = await ai_copilot_service.get_ticket_diagnosis(db, tid)
+            return diagnosis
+        except Exception as e:
+            return f"Error al generar diagnóstico: {e}"
+
+    return [
+        query_tickets, 
+        get_ticket, 
+        create_ticket, 
+        change_status, 
+        add_comment, 
+        reassign_ticket, 
+        search_knowledge,
+        ai_diagnose_ticket
+    ]

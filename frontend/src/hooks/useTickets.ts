@@ -18,6 +18,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import api from "@/lib/api";
+import useNotificationStore from "@/stores/notificationStore";
 import { Ticket, TicketFilters, TicketListResponse, TicketStatus, TicketUpdate } from "@/types";
 
 interface UseTicketsReturn {
@@ -39,6 +40,18 @@ export function useTickets(filters: TicketFilters = {}): UseTicketsReturn {
   const [fetchKey, setFetchKey] = useState(0); // increment to trigger re-fetch
 
   const refetch = useCallback(() => setFetchKey((k) => k + 1), []);
+  const notifications = useNotificationStore((s) => s.notifications);
+
+  // Auto-refetch when relevant notifications arrive
+  useEffect(() => {
+    if (notifications.length > 0) {
+      const last = notifications[0];
+      // Only refetch if it's a status change or assignment notification
+      if (last.type === "status_changed" || last.type === "assigned") {
+        refetch();
+      }
+    }
+  }, [notifications, refetch]);
 
   useEffect(() => {
     let cancelled = false;

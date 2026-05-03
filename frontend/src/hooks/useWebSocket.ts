@@ -41,7 +41,9 @@ export function useWebSocket(token: string | null) {
         ws.current.close();
       }
 
-      const socket = new WebSocket(`${WS_URL}/ws?token=${token}`);
+      // Clean the URL to avoid double slashes if NEXT_PUBLIC_API_URL ends with /
+      const baseUrl = WS_URL.endsWith("/") ? WS_URL.slice(0, -1) : WS_URL;
+      const socket = new WebSocket(`${baseUrl}/ws?token=${token}`);
       ws.current = socket;
 
       socket.onmessage = (event) => {

@@ -52,6 +52,42 @@ async def get_ticket(db: AsyncSession, ticket_id: uuid.UUID) -> Optional[TicketO
         return None
         
     return TicketOut.model_validate(ticket)
+    
+    
+async def create_ticket(
+    db: AsyncSession,
+    title: str,
+    description: Optional[str],
+    priority: TicketPriority,
+    author_id: uuid.UUID,
+    assignee_id: Optional[uuid.UUID] = None,
+) -> TicketOut:
+    """
+    Creates a new ticket and notifies the system.
+    """
+    # 1. Create model
+    ticket = Ticket(
+        title=title,
+        description=description,
+        priority=priority,
+        author_id=author_id,
+        assignee_id=assignee_id,
+    )
+    db.add(ticket)
+    await db.flush() # Get the ID for notifications
+    
+    # 2. Side effects
+    # We fetch the author object to use their name in the notification
+    author_result = await db.execute(select(User).where(User.id == author_id))
+    author = author_result.scalar_one()
+    
+    await notification_service.notify_ticket_created(db, ticket=ticket, actor=author)
+    
+    # 3. Finalize
+    await db.commit()
+    
+    # 4. Return decoupled schema
+    return await get_ticket(db, ticket.id) # type: ignore
 
 
 async def change_status(

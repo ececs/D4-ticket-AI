@@ -34,7 +34,7 @@ from app.models.user import User
 from app.schemas.ticket import TicketCreate, TicketListResponse, TicketOut, TicketUpdate
 from app.services.cache_service import cache_get, cache_set, cache_invalidate_prefix
 from app.services.embedding_service import generate_embedding, generate_ticket_embedding
-from app.services import ticket_service
+from app.services import ticket_service, notification_service, ai_copilot_service
 
 CACHE_PREFIX = "tickets:"
 CACHE_TTL = 60  # seconds
@@ -246,6 +246,20 @@ async def delete_ticket(ticket_id: uuid.UUID, db: DB, current_user: CurrentUser)
     await db.delete(ticket)
     await db.commit()
     await cache_invalidate_prefix(CACHE_PREFIX)
+
+
+@router.post("/{ticket_id}/ai-diagnose")
+async def ai_diagnose_ticket(
+    ticket_id: uuid.UUID,
+    db: DB,
+    current_user: CurrentUser,
+):
+    """
+    Generate an AI diagnosis and suggested solution for a ticket.
+    Uses RAG and historical comments for context.
+    """
+    diagnosis = await ai_copilot_service.get_ticket_diagnosis(db, ticket_id)
+    return {"diagnosis": diagnosis}
 
 
 # ─── Private helpers ──────────────────────────────────────────────────────────

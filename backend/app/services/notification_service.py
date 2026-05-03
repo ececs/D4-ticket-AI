@@ -81,6 +81,7 @@ async def _create_notification(
         "type": notification_type.value,
         "ticket_id": str(ticket_id),
         "message": message,
+        "read": notification.read,
         "created_at": notification.created_at.isoformat(),
         "unread_count": unread_count,
     }
@@ -90,6 +91,28 @@ async def _create_notification(
         await _pg_notify(db, str(user_id), event)
 
     return notification
+
+
+async def notify_ticket_created(
+    db: AsyncSession,
+    ticket: Ticket,
+    actor: User,
+) -> None:
+    """
+    Notify the author and the assignee when a new ticket is created.
+    """
+    users_to_notify = {ticket.author_id}
+    if ticket.assignee_id:
+        users_to_notify.add(ticket.assignee_id)
+
+    for user_id in users_to_notify:
+        await _create_notification(
+            db,
+            user_id=user_id,
+            notification_type=NotificationType.status_changed,
+            ticket_id=ticket.id,
+            message=f'New ticket created: "{ticket.title}" by {actor.name}',
+        )
 
 
 async def notify_ticket_assigned(

@@ -48,7 +48,8 @@ async def websocket_endpoint(
         # Send unread notifications list
         notifications = await notification_service.list_unread_notifications(db, user.id)
         for notif in notifications:
-            await websocket.send_text(notif.model_dump_json())
+            # We must send it in the same format as the real-time events
+            await websocket.send_json(notif.model_dump(mode="json"))
 
     try:
         while True:
