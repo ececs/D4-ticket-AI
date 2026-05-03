@@ -76,18 +76,21 @@ async def scrape_and_index_url(ticket_id: uuid.UUID, url: str) -> None:
             # 5. Notify via WebSocket (Live UI update)
             if ticket:
                 from app.core.websocket_manager import manager
-                notification = {
-                    "type": "web_scrape_completed",
-                    "ticket_id": str(ticket_id),
-                    "message": "Análisis web finalizado"
-                }
+                from app.schemas.websocket import WSMessage, WSMessageType
+                
+                ws_msg = WSMessage(
+                    type=WSMessageType.WEB_SCRAPE_COMPLETED,
+                    ticket_id=ticket_id,
+                    message="Análisis web finalizado"
+                )
+                
                 # Notify both author and assignee
                 users_to_notify = {str(ticket.author_id)}
                 if ticket.assignee_id:
                     users_to_notify.add(str(ticket.assignee_id))
                 
                 for uid in users_to_notify:
-                    await manager.broadcast_to_user(uid, notification)
+                    await manager.broadcast_to_user(uid, ws_msg)
             
         logger.info(f"Scraping Service: Successfully indexed web context for ticket {ticket_id}")
         

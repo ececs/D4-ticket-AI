@@ -38,18 +38,27 @@ async def websocket_endpoint(
 
         await manager.connect(websocket, user.id)
 
+        from app.schemas.websocket import WSMessage, WSMessageType
+        
         # Send initial state (unread count)
         unread_count = await notification_service.get_unread_count(db, user.id)
-        await websocket.send_json({
-            "type": "initial_state",
-            "unread_count": unread_count
-        })
+        msg = WSMessage(
+            type=WSMessageType.SYSTEM_ALERT,
+            data={"unread_count": unread_count},
+            message="Estado inicial cargado"
+        )
+        await websocket.send_text(msg.model_dump_json())
 
         # Send unread notifications list
         notifications = await notification_service.list_unread_notifications(db, user.id)
         for notif in notifications:
             # We must send it in the same format as the real-time events
-            await websocket.send_json(notif.model_dump(mode="json"))
+            notif_msg = WSMessage(
+                type=WSMessageType.NOTIFICATION,
+                ticket_id=notif.ticket_id,
+                data=notif.model_dump(mode="json")
+            )
+            await websocket.send_text(notif_msg.model_dump_json())
 
     try:
         while True:

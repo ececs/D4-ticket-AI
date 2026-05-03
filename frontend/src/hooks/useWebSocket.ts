@@ -23,6 +23,7 @@
 import { useEffect, useRef } from "react";
 import useNotificationStore from "@/stores/notificationStore";
 import { Notification } from "@/types";
+import { useToast } from "@/hooks/use-toast";
 
 const WS_URL = process.env.NEXT_PUBLIC_API_URL?.replace("http", "ws") ?? "ws://localhost:8000";
 
@@ -30,6 +31,7 @@ export function useWebSocket(token: string | null) {
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
   const { addNotification, triggerRefresh } = useNotificationStore();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (!token) return; // Not authenticated yet
@@ -48,25 +50,55 @@ export function useWebSocket(token: string | null) {
 
       socket.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data) as Record<string, unknown>;
+          const wsMsg = JSON.parse(event.data);
+          const { type, data, ticket_id, message } = wsMsg;
+
           // Ignore keepalive pings
-          if (data.type === "ping") return;
+          if (type === "ping") return;
 
-          // Special case: web_scrape_completed is a virtual event (not in DB)
-          if (data.type === "web_scrape_completed" && data.ticket_id) {
-            triggerRefresh(String(data.ticket_id));
-            return;
+          switch (type) {
+            case "web_scrape_completed":
+              if (ticket_id) {
+                triggerRefresh(String(ticket_id));
+                toast({
+                  title: "Análisis Web Finalizado",
+                  description: message || "La IA ha terminado de analizar la URL del cliente.",
+                  variant: "success",
+                });
+              }
+              break;
+
+            case "notification":
+              if (data && data.id) {
+                addNotification(data as unknown as Notification);
+                if (data.ticket_id) triggerRefresh(String(data.ticket_id));
+                
+                toast({
+                  title: "Nueva Notificación",
+                  description: data.message || "Tienes una nueva actualización.",
+                });
+              }
+              break;
+
+            case "ticket_updated":
+              if (ticket_id) {
+                triggerRefresh(String(ticket_id));
+              }
+              break;
+              
+            case "system_alert":
+              toast({
+                title: "Aviso del Sistema",
+                description: message,
+                variant: type.includes("error") ? "destructive" : "default",
+              });
+              break;
+
+            default:
+              console.warn("Unknown WebSocket message type:", type);
           }
-
-          // Persistent notifications must have an id and ticket_id
-          if (!data.id || !data.ticket_id) return;
-          
-          addNotification(data as unknown as Notification);
-          
-          // Trigger a refresh of any components listening to the refresh signal
-          triggerRefresh(String(data.ticket_id));
-        } catch {
-          // Ignore malformed messages
+        } catch (err) {
+          console.error("Failed to parse WebSocket message:", err);
         }
       };
 

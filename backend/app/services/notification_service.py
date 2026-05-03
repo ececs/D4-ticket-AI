@@ -29,6 +29,7 @@ from app.models.ticket import Ticket
 from app.models.user import User
 from app.schemas.notification import NotificationOut
 from app.services import pubsub_service
+from app.schemas.websocket import WSMessage, WSMessageType
 
 
 async def _pg_notify(db: AsyncSession, user_id: str, payload: dict) -> None:
@@ -75,16 +76,27 @@ async def _create_notification(
     unread_count = await get_unread_count(db, user_id)
 
     # Publish to connected WebSocket clients (Redis Pub/Sub or PG NOTIFY fallback)
-    event = {
-        "user_id": str(user_id),
-        "id": str(notification.id),
-        "type": notification_type.value,
-        "ticket_id": str(ticket_id),
-        "message": message,
-        "read": notification.read,
-        "created_at": notification.created_at.isoformat(),
-        "unread_count": unread_count,
-    }
+    from app.schemas.websocket import WSMessage, WSMessageType
+    
+    ws_msg = WSMessage(
+        type=WSMessageType.NOTIFICATION,
+        ticket_id=ticket_id,
+        data={
+            "id": str(notification.id),
+            "user_id": str(user_id),
+            "type": notification_type.value,
+            "ticket_id": str(ticket_id),
+            "message": message,
+            "read": notification.read,
+            "created_at": notification.created_at.isoformat(),
+            "unread_count": unread_count,
+        }
+    )
+    
+    event = ws_msg.model_dump()
+    # Add user_id for the listener to know where to broadcast
+    event["user_id"] = str(user_id)
+    
     if pubsub_service.is_redis_available():
         await pubsub_service.publish(event)
     else:
@@ -187,26 +199,45 @@ async def notify_status_changed(
         )
 
 
+async def broadcast_live_update(
+    user_id: uuid.UUID,
+    ticket_id: uuid.UUID,
+    type: WSMessageType = WSMessageType.TICKET_UPDATED,
+    message: Optional[str] = None
+) -> None:
+    """
+    Push a real-time event to a user WITHOUT creating a database record.
+    Used for UI synchronization (e.g. "Someone is editing this ticket").
+    """
+    from app.core.websocket_manager import manager
+    
+    ws_msg = WSMessage(
+        type=type,
+        ticket_id=ticket_id,
+        message=message
+    )
+    await manager.broadcast_to_user(str(user_id), ws_msg)
+
+
 async def notify_ticket_updated(
     db: AsyncSession,
     ticket: Ticket,
     actor: User,
 ) -> None:
     """
-    Notify author and assignee that a ticket has been updated (e.g. priority change).
-    This triggers real-time UI refreshes.
+    Notify author and assignee that a ticket has been updated.
+    This is LIVE-ONLY to avoid DB clutter, but ensures UI sync.
     """
     users_to_notify = {ticket.author_id}
     if ticket.assignee_id:
         users_to_notify.add(ticket.assignee_id)
 
     for user_id in users_to_notify:
-        await _create_notification(
-            db,
+        # We don't use _create_notification here because we don't want a DB record
+        await broadcast_live_update(
             user_id=user_id,
-            notification_type=NotificationType.status_changed,
             ticket_id=ticket.id,
-            message=f'{actor.name} updated ticket: "{ticket.title}"',
+            message=f'Ticket "{ticket.title}" actualizado por {actor.display_name}'
         )
 
 

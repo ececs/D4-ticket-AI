@@ -21,6 +21,8 @@ export const metadata: Metadata = {
   description: "Collaborative ticketing system with AI assistant",
 };
 
+import { Toaster } from "@/components/ui/toaster";
+
 export default function RootLayout({
   children,
 }: {
@@ -30,6 +32,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         {children}
+        <Toaster />
       </body>
     </html>
   );

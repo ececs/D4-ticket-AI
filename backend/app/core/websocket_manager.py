@@ -21,6 +21,7 @@ When a notification must be delivered to user X:
 import json
 import uuid
 from fastapi import WebSocket
+from app.schemas.websocket import WSMessage
 
 
 class WebSocketManager:
@@ -61,20 +62,21 @@ class WebSocketManager:
             if not self.connections[key]:
                 del self.connections[key]
 
-    async def broadcast_to_user(self, user_id: str, data: dict) -> None:
+    async def broadcast_to_user(self, user_id: str, data: dict | WSMessage) -> None:
         """
-        Send a JSON payload to all active connections for a specific user.
-
-        Broken connections (client closed browser) are cleaned up automatically.
-
-        Args:
-            user_id: UUID string of the target user.
-            data: Dict to serialize as JSON and send.
+        Send a payload to all active connections for a specific user.
+        Validates data if it's a WSMessage object.
         """
         if user_id not in self.connections:
-            return  # User has no active connections — notification saved to DB, will load on next login
+            return 
 
-        message = json.dumps(data)
+        if isinstance(data, WSMessage):
+            message = data.model_dump_json()
+        elif isinstance(data, dict):
+            # Fallback for raw dicts, though WSMessage is preferred
+            message = json.dumps(data)
+        else:
+            message = str(data)
         dead_connections: list[WebSocket] = []
 
         for websocket in self.connections[user_id]:

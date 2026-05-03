@@ -23,7 +23,9 @@ import api from "@/lib/api";
 import {
   Ticket, Comment, Attachment, TicketStatus, TicketPriority, User,
 } from "@/types";
+import { getAuthToken } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
 import { STATUS_LABELS, PRIORITY_CONFIG, timeAgo, formatFileSize } from "@/lib/utils";
 import { useUsers } from "@/hooks/useUsers";
 import useNotificationStore from "@/stores/notificationStore";
@@ -248,8 +250,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
     setShowDiagnosis(true);
     
     try {
-      const tokenMatch = document.cookie.match(/(?:^|;\s*)access_token=([^;]+)/);
-      const token = tokenMatch ? decodeURIComponent(tokenMatch[1]) : null;
+      const token = getAuthToken();
       
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/tickets/${ticketId}/diagnosis`, {
         headers: {
