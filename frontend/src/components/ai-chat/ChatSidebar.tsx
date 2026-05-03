@@ -23,7 +23,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { X, Send, Bot, Loader2, Wrench, RotateCcw } from "lucide-react";
 import { useParams } from "next/navigation";
-import { useSelectionStore } from "@/store/useSelectionStore";
+import { useSelectionStore } from "@/stores/useSelectionStore";
 import { ChatMessage } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -212,7 +212,7 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
     } finally {
       setIsStreaming(false);
     }
-  }, [input, isStreaming, messages]);
+  }, [input, isStreaming, messages, selectedTicketIds, currentTicketId]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {

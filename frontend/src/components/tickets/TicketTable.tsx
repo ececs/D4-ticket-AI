@@ -19,7 +19,7 @@ import { Ticket, TicketFilters, TicketPriority, TicketStatus } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { STATUS_LABELS, PRIORITY_CONFIG, timeAgo } from "@/lib/utils";
 import { ChevronUp, ChevronDown, ChevronsUpDown, Trash2, ExternalLink, CheckSquare, Square } from "lucide-react";
-import { useSelectionStore } from "@/store/useSelectionStore";
+import { useSelectionStore } from "@/stores/useSelectionStore";
 
 const STATUSES: TicketStatus[] = ["open", "in_progress", "in_review", "closed"];
 const PRIORITIES: TicketPriority[] = ["low", "medium", "high", "critical"];

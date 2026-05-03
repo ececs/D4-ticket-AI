@@ -100,13 +100,13 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
   useEffect(() => {
     if (refreshSignal > 0 && lastTicketId === ticketId) {
       console.log("Real-time refresh triggered for ticket:", ticketId);
-      fetchData();
+      fetchData(true);
       setIsRefreshingWeb(false); // Stop the loading animation on the refresh button
     }
   }, [refreshSignal, lastTicketId, ticketId]);
 
-  const fetchData = async () => {
-    setIsLoading(true);
+  const fetchData = async (background = false) => {
+    if (!background) setIsLoading(true);
     try {
       const [ticketRes, commentsRes, attachmentsRes, webCtxRes] = await Promise.all([
         api.get<Ticket>(`/tickets/${ticketId}`),
@@ -129,7 +129,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
           : `Failed to load ticket (${status ?? "network error"})`
       );
     } finally {
-      setIsLoading(false);
+      if (!background) setIsLoading(false);
     }
   };
 

@@ -26,7 +26,10 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = getAuthToken();
   if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+    // Direct assignment is safer for cross-version compatibility
+    if (config.headers) {
+      config.headers["Authorization"] = `Bearer ${token}`;
+    }
   }
   return config;
 });

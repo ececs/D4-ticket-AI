@@ -20,6 +20,7 @@ PostgreSQL NOTIFY channel: "notifications"
 """
 
 import json
+from typing import List, Optional, Any, Dict
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text, func
@@ -35,7 +36,7 @@ from app.schemas.websocket import WSMessage, WSMessageType
 async def _pg_notify(db: AsyncSession, user_id: str, payload: dict) -> None:
     """Send a raw PostgreSQL NOTIFY — used as fallback when Redis is unavailable."""
     payload["user_id"] = user_id
-    payload_str = json.dumps(payload)
+    payload_str = json.dumps(payload, default=str)
     await db.execute(
         text("SELECT pg_notify('notifications', :payload)"),
         {"payload": payload_str},
@@ -76,6 +77,7 @@ async def _create_notification(
     unread_count = await get_unread_count(db, user_id)
 
     # Publish to connected WebSocket clients (Redis Pub/Sub or PG NOTIFY fallback)
+    # Prepare the payload for real-time delivery
     from app.schemas.websocket import WSMessage, WSMessageType
     
     ws_msg = WSMessage(
@@ -93,14 +95,18 @@ async def _create_notification(
         }
     )
     
-    event = ws_msg.model_dump()
+    event = ws_msg.model_dump(mode="json")
     # Add user_id for the listener to know where to broadcast
     event["user_id"] = str(user_id)
     
+    logger.info(f"🔔 Notification created: type={notification_type.value}, user={user_id}, msg={message[:30]}...")
+    
     if pubsub_service.is_redis_available():
         await pubsub_service.publish(event)
+        logger.debug(f"Broadcasted notification to user {user_id} via Redis")
     else:
         await _pg_notify(db, str(user_id), event)
+        logger.debug(f"Broadcasted notification to user {user_id} via PG Notify")
 
     return notification
 
@@ -179,7 +185,8 @@ async def notify_status_changed(
         actor: The user who made the change.
         new_status: The new status value (for display in the message).
     """
-    status_label = new_status.replace("_", " ").title()
+    status_str = new_status.value if hasattr(new_status, "value") else new_status
+    status_label = status_str.replace("_", " ").title()
     message = f'{actor.name} changed "{ticket.title}" to {status_label}'
 
     users_to_notify: set[uuid.UUID] = set()
@@ -203,20 +210,34 @@ async def broadcast_live_update(
     user_id: uuid.UUID,
     ticket_id: uuid.UUID,
     type: WSMessageType = WSMessageType.TICKET_UPDATED,
-    message: Optional[str] = None
+    message: Optional[str] = None,
+    db: Optional[AsyncSession] = None
 ) -> None:
     """
-    Push a real-time event to a user WITHOUT creating a database record.
+    Push a real-time event to a user via Pub/Sub.
     Used for UI synchronization (e.g. "Someone is editing this ticket").
     """
-    from app.core.websocket_manager import manager
+    from app.schemas.websocket import WSMessage
     
     ws_msg = WSMessage(
         type=type,
         ticket_id=ticket_id,
         message=message
     )
-    await manager.broadcast_to_user(str(user_id), ws_msg)
+    
+    # We must use Pub/Sub here too, so that it works across multiple workers!
+    event = ws_msg.model_dump(mode="json")
+    event["user_id"] = str(user_id)
+    
+    logger.info(f"🔄 Live update broadcast: type={type.value}, user={user_id}, ticket={ticket_id}")
+    
+    from app.services import pubsub_service
+    if pubsub_service.is_redis_available():
+        await pubsub_service.publish(event)
+    elif db is not None:
+        await _pg_notify(db, str(user_id), event)
+    else:
+        logger.warning(f"Live update skipped for user {user_id}: No Redis and no DB session provided for PG Notify.")
 
 
 async def notify_ticket_updated(
@@ -228,7 +249,7 @@ async def notify_ticket_updated(
     Notify author and assignee that a ticket has been updated.
     This is LIVE-ONLY to avoid DB clutter, but ensures UI sync.
     """
-    users_to_notify = {ticket.author_id}
+    users_to_notify = {ticket.author_id, actor.id}
     if ticket.assignee_id:
         users_to_notify.add(ticket.assignee_id)
 
@@ -237,7 +258,8 @@ async def notify_ticket_updated(
         await broadcast_live_update(
             user_id=user_id,
             ticket_id=ticket.id,
-            message=f'Ticket "{ticket.title}" actualizado por {actor.display_name}'
+            message=f'Ticket "{ticket.title}" actualizado por {actor.name}',
+            db=db
         )
 
 

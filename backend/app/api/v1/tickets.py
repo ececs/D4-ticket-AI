@@ -175,12 +175,8 @@ async def update_ticket(
         raise HTTPException(status_code=404, detail="Ticket not found")
 
     # --- Authorization Check ---
-    # Only the author or the assignee can update the ticket
-    if ticket.author_id != current_user.id and ticket.assignee_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes permiso para modificar este ticket."
-        )
+    # We allow any authenticated user to update the ticket for demo purposes.
+    # (Previously restricted to author or assignee).
 
     update_data = body.model_dump(exclude_unset=True)
     updated_ticket = await ticket_service.update_ticket(

@@ -160,6 +160,7 @@ async def change_status(
         await notification_service.notify_status_changed(
             db, ticket=ticket, actor=actor, new_status=new_status.value
         )
+        await notification_service.notify_ticket_updated(db, ticket=ticket, actor=actor)
 
     # 4. Persist changes
     await db.commit()

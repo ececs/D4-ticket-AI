@@ -71,10 +71,16 @@ async def redis_listen_loop() -> None:
             if message["type"] != "message":
                 continue
             try:
-                data = json.loads(message["data"])
-                # Validate the incoming data from PubSub
-                payload = NotificationPayload(**data)
-                await manager.broadcast_to_user(str(payload.user_id), payload.model_dump())
+                raw_data = json.loads(message["data"])
+                # Extract user_id which is used for routing but not part of WSMessage
+                user_id = raw_data.pop("user_id", None)
+                if not user_id:
+                    continue
+                
+                # Validate the rest as a WSMessage
+                from app.schemas.websocket import WSMessage
+                ws_msg = WSMessage(**raw_data)
+                await manager.broadcast_to_user(str(user_id), ws_msg)
             except Exception as exc:
                 logger.debug("Error processing pub/sub message: %s", exc)
     except asyncio.CancelledError:

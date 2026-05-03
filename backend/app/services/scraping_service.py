@@ -22,6 +22,31 @@ async def scrape_and_index_url(ticket_id: uuid.UUID, url: str) -> None:
     """
     logger.info(f"Scraping Service: Starting analysis for ticket {ticket_id} -> {url}")
     
+    # Notify that analysis has started
+    try:
+        async with async_session_factory() as db:
+            from app.models.ticket import Ticket
+            from sqlalchemy import select
+            ticket_res = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+            ticket = ticket_res.scalar_one_or_none()
+            
+            if ticket:
+                from app.services.notification_service import broadcast_live_update
+                from app.schemas.websocket import WSMessageType
+                users_to_notify = {ticket.author_id}
+                if ticket.assignee_id:
+                    users_to_notify.add(ticket.assignee_id)
+                
+                for uid in users_to_notify:
+                    await broadcast_live_update(
+                        user_id=uid,
+                        ticket_id=ticket_id,
+                        type=WSMessageType.SYSTEM_ALERT,
+                        message=f"Analizando URL: {url}..."
+                    )
+    except Exception as e:
+        logger.warning(f"Failed to send start notification: {e}")
+    
     try:
         # 1. Download and extract text (Offloaded to a thread to avoid blocking)
         # trafilatura is synchronous, so we use to_thread
@@ -73,24 +98,23 @@ async def scrape_and_index_url(ticket_id: uuid.UUID, url: str) -> None:
             
             await db.commit()
             
-            # 5. Notify via WebSocket (Live UI update)
-            if ticket:
-                from app.core.websocket_manager import manager
-                from app.schemas.websocket import WSMessage, WSMessageType
-                
-                ws_msg = WSMessage(
-                    type=WSMessageType.WEB_SCRAPE_COMPLETED,
+        # 5. Notify via WebSocket (Live UI update)
+        if ticket:
+            from app.services.notification_service import broadcast_live_update
+            from app.schemas.websocket import WSMessageType
+            
+            # Notify both author and assignee
+            users_to_notify = {ticket.author_id}
+            if ticket.assignee_id:
+                users_to_notify.add(ticket.assignee_id)
+            
+            for uid in users_to_notify:
+                await broadcast_live_update(
+                    user_id=uid,
                     ticket_id=ticket_id,
-                    message="Análisis web finalizado"
+                    type=WSMessageType.WEB_SCRAPE_COMPLETED,
+                    message=f"Análisis finalizado para: {url}"
                 )
-                
-                # Notify both author and assignee
-                users_to_notify = {str(ticket.author_id)}
-                if ticket.assignee_id:
-                    users_to_notify.add(str(ticket.assignee_id))
-                
-                for uid in users_to_notify:
-                    await manager.broadcast_to_user(uid, ws_msg)
             
         logger.info(f"Scraping Service: Successfully indexed web context for ticket {ticket_id}")
         

@@ -126,8 +126,8 @@ async def search(db: AsyncSession, query: str, k: int = 5, ticket_id: Optional[s
         # or we could do a union. For simplicity and precision, if ticket_id is provided,
         # we look for those first.
         if ticket_id:
-            # filter by ticket_id inside chunk_metadata JSON
-            stmt = stmt.where(KnowledgeChunk.chunk_metadata["ticket_id"].astext == str(ticket_id))
+            from sqlalchemy import func
+            stmt = stmt.where(func.json_extract_path_text(KnowledgeChunk.chunk_metadata, "ticket_id") == str(ticket_id))
             
         stmt = stmt.order_by(KnowledgeChunk.embedding.cosine_distance(query_embedding))  # type: ignore[attr-defined]
         stmt = stmt.limit(k)
@@ -135,7 +135,8 @@ async def search(db: AsyncSession, query: str, k: int = 5, ticket_id: Optional[s
         pattern = f"%{query}%"
         stmt = select(KnowledgeChunk).where(KnowledgeChunk.content.ilike(pattern))
         if ticket_id:
-            stmt = stmt.where(KnowledgeChunk.chunk_metadata["ticket_id"].astext == str(ticket_id))
+            from sqlalchemy import func
+            stmt = stmt.where(func.json_extract_path_text(KnowledgeChunk.chunk_metadata, "ticket_id") == str(ticket_id))
         stmt = stmt.limit(k)
 
     result = await db.execute(stmt)
