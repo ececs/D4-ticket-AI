@@ -47,6 +47,8 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
     thread_id: str | None = None  # UUID generated and persisted by the frontend
+    current_ticket_id: str | None = None  # The ID of the ticket the user is currently viewing
+    selected_ticket_ids: list[str] | None = None  # List of tickets selected in the UI
 
 
 @router.get("/history/{thread_id}")
@@ -82,24 +84,66 @@ async def chat(
     db: DB,
     current_user: CurrentUser,
 ):
-    """
-    Stream an AI response. Supports persistent memory via thread_id.
-
-    With checkpointer (production):
-      - thread_id identifies the conversation in PostgreSQL.
-      - Only the latest user message is passed; the agent loads history
-        from the checkpoint automatically.
-
-    Without checkpointer (stateless fallback):
-      - Full message history is passed on every request (legacy behavior).
-    """
     checkpointer = get_checkpointer()
     # Fallback to current_user.id if no thread_id is provided.
     thread_id = request.thread_id or str(current_user.id)
-    agent = build_agent(db, current_user)
     
     v_logger = logging.getLogger("uvicorn.error")
     v_logger.info("AI Session: thread_id=%s (Source: %s)", thread_id, "Frontend" if request.thread_id else "UserFallback")
+
+    # 3. Build dynamic context (Ticket Awareness)
+    context_parts = []
+    
+    # 3a. Current Ticket Context
+    if request.current_ticket_id:
+        try:
+            from app.services.ticket_service import get_ticket
+            ticket_id_uuid = uuid.UUID(request.current_ticket_id)
+            ticket_data = await get_ticket(db, ticket_id_uuid)
+            if ticket_data:
+                context_parts.append(
+                    f"USER IS CURRENTLY VIEWING THIS TICKET (USE THIS FULL ID FOR ACTIONS):\n"
+                    f"FULL_ID: {str(ticket_data.id)}\n"
+                    f"Title: {ticket_data.title}\n"
+                    f"Status: {ticket_data.status.value}\n"
+                    f"Priority: {ticket_data.priority.value}\n"
+                    f"Description: {ticket_data.description or 'No description'}"
+                )
+        except Exception as e:
+            v_logger.warning("AI Context: Failed to fetch current ticket details: %s", str(e))
+
+    # 3b. Selected Tickets Context
+    if request.selected_ticket_ids and len(request.selected_ticket_ids) > 0:
+        try:
+            from app.models.ticket import Ticket
+            from sqlalchemy import select
+            # Only fetch if they aren't already the current ticket (avoid duplicates)
+            other_ids = [uuid.UUID(tid) for tid in request.selected_ticket_ids if tid != request.current_ticket_id]
+            if other_ids:
+                res = await db.execute(select(Ticket).where(Ticket.id.in_(other_ids)))
+                selected_tickets = res.scalars().all()
+                if selected_tickets:
+                    selection_text = "USER HAS SELECTED THESE TICKETS (USE THESE FULL IDs FOR ACTIONS):\n"
+                    for t in selected_tickets:
+                        selection_text += f"- Title: {t.title} | Status: {t.status.value} | FULL_ID: {str(t.id)}\n"
+                    context_parts.append(selection_text)
+        except Exception as e:
+            v_logger.warning("AI Context: Failed to fetch selected tickets: %s", str(e))
+
+    extra_context = ""
+    if context_parts:
+        extra_context = "\n\n" + "\n\n---\n\n".join(context_parts)
+        v_logger.info("AI Context: Injected details for current/selected tickets")
+
+    try:
+        agent = build_agent(db, current_user, system_context=extra_context)
+    except Exception as e:
+        error_msg = str(e)
+        v_logger.error("AI Initialization Failed: %s", error_msg, exc_info=True)
+        async def error_generator():
+            yield f"data: {json.dumps({'type': 'error', 'content': f'*(Error de Configuración: {error_msg})*'})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        return StreamingResponse(error_generator(), media_type="text/event-stream")
 
     if checkpointer and thread_id:
         v_logger.info("Memory: Loading persistent history for thread %s", thread_id)
@@ -189,7 +233,7 @@ async def chat(
 
         except Exception as e:
             error_msg = str(e)
-            logger.error("Streaming error in chat: %s", error_msg, exc_info=True)
+            v_logger.error("Streaming error in chat: %s", error_msg, exc_info=True)
             
             # User-friendly explanation for Quota/API issues
             friendly_msg = error_msg

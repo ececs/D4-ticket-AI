@@ -28,6 +28,8 @@ const schema = z.object({
   description: z.string().optional(),
   priority: z.enum(["low", "medium", "high", "critical"]).default("medium"),
   assignee_id: z.string().uuid().nullable().optional(),
+  client_url: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+  client_summary: z.string().optional(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -62,6 +64,8 @@ export function TicketForm({ open, onClose, onSuccess, ticket, users }: TicketFo
       description: ticket?.description ?? "",
       priority: ticket?.priority ?? "medium",
       assignee_id: ticket?.assignee_id ?? null,
+      client_url: ticket?.client_url ?? "",
+      client_summary: ticket?.client_summary ?? "",
     },
   });
 
@@ -72,6 +76,8 @@ export function TicketForm({ open, onClose, onSuccess, ticket, users }: TicketFo
       description: ticket?.description ?? "",
       priority: ticket?.priority ?? "medium",
       assignee_id: ticket?.assignee_id ?? null,
+      client_url: ticket?.client_url ?? "",
+      client_summary: ticket?.client_summary ?? "",
     });
   }, [ticket, reset]);
 
@@ -79,6 +85,8 @@ export function TicketForm({ open, onClose, onSuccess, ticket, users }: TicketFo
     const payload = {
       ...data,
       assignee_id: data.assignee_id || null,
+      client_url: data.client_url || null,
+      client_summary: data.client_summary || null,
     };
 
     const response = isEdit
@@ -136,6 +144,37 @@ export function TicketForm({ open, onClose, onSuccess, ticket, users }: TicketFo
                 rows={3}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                 placeholder="Optional details, context or steps to reproduce..."
+              />
+            </div>
+
+            {/* Client URL */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Client Website (for AI Analysis)
+              </label>
+              <input
+                {...register("client_url")}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="https://example.com (landing page context)"
+              />
+              {errors.client_url && (
+                <p className="text-xs text-red-600 mt-1">{errors.client_url.message}</p>
+              )}
+              <p className="text-[10px] text-slate-400 mt-1">
+                Lanzará un escaneo automático para mejorar el diagnóstico de la IA.
+              </p>
+            </div>
+
+            {/* Client Summary */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Resumen del Cliente / Contexto Negocio
+              </label>
+              <textarea
+                {...register("client_summary")}
+                rows={2}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                placeholder="Ej: Cliente de banca, usa GCP/K8s, muy técnico..."
               />
             </div>
 

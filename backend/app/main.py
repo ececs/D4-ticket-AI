@@ -36,7 +36,22 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # --- Startup ---
+    # Startup diagnostics
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info("Checking environment variables...")
+    if settings.GOOGLE_API_KEY:
+        logger.info(f"✅ GOOGLE_API_KEY loaded (starts with {settings.GOOGLE_API_KEY[:4]}...)")
+    else:
+        logger.warning("❌ GOOGLE_API_KEY is MISSING!")
+        
+    if settings.OPENAI_API_KEY:
+        logger.info(f"✅ OPENAI_API_KEY loaded (starts with {settings.OPENAI_API_KEY[:7]}...)")
+    else:
+        logger.warning("❌ OPENAI_API_KEY is MISSING!")
+    
+    # Initialize background notification listener (PostgreSQL)
     _init_langsmith()
     await _init_storage()
     await init_checkpointer()
@@ -129,8 +144,8 @@ async def _pg_listen_loop() -> None:
             user_id = data.get("user_id")
             if user_id:
                 await manager.broadcast_to_user(user_id, data)
-        except Exception:
-            pass  # Never crash the listener loop on a bad payload
+        except Exception as e:
+            logger.error(f"WebSocket Listener: Failed to process notification: {str(e)}")
 
     await conn.add_listener("notifications", on_notification)
 
@@ -154,14 +169,13 @@ app = FastAPI(
 )
 
 # CORS: allow the frontend origin to make cross-origin requests.
-# In production, replace origins with the actual Vercel URL.
+# We combine the configured CORS_ORIGINS with FRONTEND_URL to ensure consistency.
+allowed_origins = list(set(settings.CORS_ORIGINS + [settings.FRONTEND_URL]))
+print(f"🔓 Allowed Origins: {allowed_origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        settings.FRONTEND_URL,
-        "http://localhost:3000",
-        "https://frontend-eight-chi-54.vercel.app",
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,  # Required for cookie-based auth
     allow_methods=["*"],
     allow_headers=["*"],

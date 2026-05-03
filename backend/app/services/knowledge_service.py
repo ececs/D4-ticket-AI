@@ -110,12 +110,10 @@ async def ingest_url(db: AsyncSession, url: str) -> dict:
     return IngestResponse(url=url, chunks_created=len(rows))
 
 
-async def search(db: AsyncSession, query: str, k: int = 5) -> list[str]:
+async def search(db: AsyncSession, query: str, k: int = 5, ticket_id: Optional[str] = None) -> list[str]:
     """
     Return the top-k knowledge chunks most relevant to `query`.
-
-    Uses cosine similarity if embeddings are available; falls back to
-    ILIKE substring match otherwise.
+    If ticket_id is provided, prioritizes or limits to chunks linked to that ticket.
     """
     query_embedding = await generate_embedding(query, task_type="RETRIEVAL_QUERY")
 
@@ -123,16 +121,22 @@ async def search(db: AsyncSession, query: str, k: int = 5) -> list[str]:
         stmt = (
             select(KnowledgeChunk)
             .where(KnowledgeChunk.embedding.isnot(None))  # type: ignore[attr-defined]
-            .order_by(KnowledgeChunk.embedding.cosine_distance(query_embedding))  # type: ignore[attr-defined]
-            .limit(k)
         )
+        # If we have a ticket_id, we search specifically for chunks with that chunk_metadata
+        # or we could do a union. For simplicity and precision, if ticket_id is provided,
+        # we look for those first.
+        if ticket_id:
+            # filter by ticket_id inside chunk_metadata JSON
+            stmt = stmt.where(KnowledgeChunk.chunk_metadata["ticket_id"].astext == str(ticket_id))
+            
+        stmt = stmt.order_by(KnowledgeChunk.embedding.cosine_distance(query_embedding))  # type: ignore[attr-defined]
+        stmt = stmt.limit(k)
     else:
         pattern = f"%{query}%"
-        stmt = (
-            select(KnowledgeChunk)
-            .where(KnowledgeChunk.content.ilike(pattern))
-            .limit(k)
-        )
+        stmt = select(KnowledgeChunk).where(KnowledgeChunk.content.ilike(pattern))
+        if ticket_id:
+            stmt = stmt.where(KnowledgeChunk.chunk_metadata["ticket_id"].astext == str(ticket_id))
+        stmt = stmt.limit(k)
 
     result = await db.execute(stmt)
     return [row.content for row in result.scalars().all()]

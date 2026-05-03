@@ -20,6 +20,7 @@ const TYPE_ICONS: Record<string, string> = {
   assigned: "👤",
   commented: "💬",
   status_changed: "🔄",
+  ticket_updated: "📝",
 };
 
 interface NotificationPanelProps {

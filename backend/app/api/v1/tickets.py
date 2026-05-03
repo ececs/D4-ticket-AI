@@ -34,7 +34,7 @@ from app.models.user import User
 from app.schemas.ticket import TicketCreate, TicketListResponse, TicketOut, TicketUpdate
 from app.services.cache_service import cache_get, cache_set, cache_invalidate_prefix
 from app.services.embedding_service import generate_embedding, generate_ticket_embedding
-from app.services import ticket_service, notification_service, ai_copilot_service
+from app.services import ticket_service, notification_service, ai_copilot_service, scraping_service
 
 CACHE_PREFIX = "tickets:"
 CACHE_TTL = 60  # seconds
@@ -134,35 +134,22 @@ async def list_tickets(
 
 @router.post("", response_model=TicketOut, status_code=status.HTTP_201_CREATED, summary="Create a ticket")
 async def create_ticket(body: TicketCreate, db: DB, current_user: CurrentUser):
-    assignee: User | None = None
-    if body.assignee_id:
-        result = await db.execute(select(User).where(User.id == body.assignee_id))
-        assignee = result.scalar_one_or_none()
-        if not assignee:
-            raise HTTPException(status_code=404, detail="Assignee not found")
-
-    ticket = Ticket(
+    ticket = await ticket_service.create_ticket(
+        db=db,
         title=body.title,
         description=body.description,
         priority=body.priority,
         author_id=current_user.id,
         assignee_id=body.assignee_id,
+        client_url=body.client_url,
+        client_summary=body.client_summary,
     )
-    db.add(ticket)
-    await db.flush()
 
-    if assignee:
-        await notification_service.notify_ticket_assigned(
-            db, ticket=ticket, assignee=assignee, actor=current_user
-        )
-
-    await db.commit()
-    await db.refresh(ticket)
-
-    asyncio.create_task(_embed_ticket(ticket.id, body.title, body.description))
+    if body.client_url:
+        asyncio.create_task(scraping_service.scrape_and_index_url(ticket.id, body.client_url))
     await cache_invalidate_prefix(CACHE_PREFIX)
 
-    return await ticket_service.get_ticket(db, ticket.id)
+    return ticket
 
 
 @router.get("/{ticket_id}", response_model=TicketOut, summary="Get a ticket by ID")
@@ -193,39 +180,17 @@ async def update_ticket(
             detail="No tienes permiso para modificar este ticket."
         )
 
-    old_status = ticket.status
-    old_assignee_id = ticket.assignee_id
-
     update_data = body.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(ticket, field, value)
-
-    await db.flush()
-
-    if body.status is not None and body.status != old_status:
-        await notification_service.notify_status_changed(
-            db, ticket=ticket, actor=current_user, new_status=body.status.value
-        )
-
-    if body.assignee_id is not None and body.assignee_id != old_assignee_id:
-        result = await db.execute(select(User).where(User.id == body.assignee_id))
-        new_assignee = result.scalar_one_or_none()
-        if new_assignee:
-            await notification_service.notify_ticket_assigned(
-                db, ticket=ticket, assignee=new_assignee, actor=current_user
-            )
-
-    await db.commit()
-
-    text_changed = body.title is not None or body.description is not None
-    if text_changed:
-        new_title = body.title or ticket.title
-        new_desc = body.description if body.description is not None else ticket.description
-        asyncio.create_task(_embed_ticket(ticket_id, new_title, new_desc))
+    updated_ticket = await ticket_service.update_ticket(
+        db=db,
+        ticket_id=ticket_id,
+        update_data=update_data,
+        actor=current_user,
+    )
 
     await cache_invalidate_prefix(CACHE_PREFIX)
 
-    return await ticket_service.get_ticket(db, ticket_id)
+    return updated_ticket
 
 
 @router.delete("/{ticket_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a ticket")

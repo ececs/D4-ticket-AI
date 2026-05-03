@@ -61,34 +61,59 @@ def get_llm() -> BaseChatModel:
     Primary: Gemini 2.0 Flash (Fast & Modern)
     Fallback: OpenAI GPT-4o-mini (Reliable & Cheap)
     """
-    # 1. Initialize Gemini (Primary)
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    gemini = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash", 
-        google_api_key=settings.GOOGLE_API_KEY,  # type: ignore[arg-type]
-        temperature=0,
-        streaming=True,
-        max_retries=0, # FAIL FAST: jump to OpenAI immediately if quota is hit
-    )
+    # 1. Initialize Primary LLM
+    import logging
+    logger = logging.getLogger(__name__)
 
-    # 2. Initialize OpenAI (Fallback)
-    # Only if the key is provided in settings
-    if settings.OPENAI_API_KEY:
-        from langchain_openai import ChatOpenAI
-        openai = ChatOpenAI(
-            model="gpt-4o-mini",
-            api_key=settings.OPENAI_API_KEY,  # type: ignore[arg-type]
+    # Use the provider and model from settings
+    primary_model = settings.AI_MODEL or "gemini-2.0-flash"
+    
+    if settings.AI_PROVIDER == "google":
+        if not settings.GOOGLE_API_KEY:
+            raise ValueError("GOOGLE_API_KEY no encontrada. Revisa tu archivo .env en la carpeta backend.")
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        primary_llm = ChatGoogleGenerativeAI(
+            model=primary_model,
+            google_api_key=settings.GOOGLE_API_KEY,
             temperature=0,
             streaming=True,
-            request_timeout=30.0, # Don't wait more than 30s
+            max_retries=0, # Fail fast to trigger fallback
         )
-        # Apply automatic fallback logic: if Gemini fails, use OpenAI
-        return gemini.with_fallbacks([openai])
+    else:
+        if not settings.OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY no encontrada para el proveedor primario.")
+        from langchain_openai import ChatOpenAI
+        primary_llm = ChatOpenAI(
+            model=primary_model,
+            api_key=settings.OPENAI_API_KEY,
+            temperature=0,
+            streaming=True,
+        )
+
+    # 2. Initialize Fallback LLM (OpenAI gpt-4o-mini is our reliable safety net)
+    if settings.AI_PROVIDER == "google":
+        if settings.OPENAI_API_KEY:
+            try:
+                from langchain_openai import ChatOpenAI
+                fallback_llm = ChatOpenAI(
+                    model="gpt-4o-mini",
+                    api_key=settings.OPENAI_API_KEY,
+                    temperature=0,
+                    streaming=True,
+                    request_timeout=30.0,
+                )
+                logger.info(f"AI Agent: Using {primary_model} with OpenAI fallback")
+                return primary_llm.with_fallbacks([fallback_llm])
+            except ImportError:
+                logger.warning("AI Agent: langchain-openai not installed. Fallback disabled.")
+        else:
+            logger.warning("AI Agent: No OpenAI API Key found. Fallback disabled.")
     
-    return gemini
+    logger.info(f"AI Agent: Using {primary_model} (no fallback)")
+    return primary_llm
 
 
-def build_agent(db: AsyncSession, actor: User):
+def build_agent(db: AsyncSession, actor: User, system_context: str = ""):
     """
     Build a ReAct agent for a single request.
     """
@@ -98,10 +123,14 @@ def build_agent(db: AsyncSession, actor: User):
     # Restoring persistent PostgreSQL memory
     checkpointer = get_checkpointer()
 
+    full_prompt = SYSTEM_PROMPT
+    if system_context:
+        full_prompt += f"\n\n{system_context}"
+
     return create_react_agent(
         model=llm,
         tools=tools,
-        prompt=SystemMessage(content=SYSTEM_PROMPT),
+        prompt=SystemMessage(content=full_prompt),
         checkpointer=checkpointer,
         state_schema=AgentState,
     )

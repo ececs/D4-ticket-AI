@@ -10,6 +10,8 @@ class TicketCreate(BaseModel):
     description: str | None = None
     priority: TicketPriority = TicketPriority.medium
     assignee_id: uuid.UUID | None = None
+    client_url: str | None = None
+    client_summary: str | None = None
 
 
 class TicketUpdate(BaseModel):
@@ -18,6 +20,8 @@ class TicketUpdate(BaseModel):
     status: TicketStatus | None = None
     priority: TicketPriority | None = None
     assignee_id: uuid.UUID | None = None
+    client_url: str | None = None
+    client_summary: str | None = None
 
 
 class TicketOut(BaseModel):
@@ -28,6 +32,8 @@ class TicketOut(BaseModel):
     priority: TicketPriority
     author_id: uuid.UUID
     assignee_id: uuid.UUID | None
+    client_url: str | None = None
+    client_summary: str | None = None
     created_at: datetime
     updated_at: datetime
     author: UserOut | None = None

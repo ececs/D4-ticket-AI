@@ -40,18 +40,28 @@ export function useTickets(filters: TicketFilters = {}): UseTicketsReturn {
   const [fetchKey, setFetchKey] = useState(0); // increment to trigger re-fetch
 
   const refetch = useCallback(() => setFetchKey((k) => k + 1), []);
-  const notifications = useNotificationStore((s) => s.notifications);
+  const refreshSignal = useNotificationStore((s) => s.refreshSignal);
+  const lastTicketId = useNotificationStore((s) => s.lastTicketId);
 
-  // Auto-refetch when relevant notifications arrive
+  // Partial update or full refetch when the refresh signal is triggered
   useEffect(() => {
-    if (notifications.length > 0) {
-      const last = notifications[0];
-      // Only refetch if it's a status change or assignment notification
-      if (last.type === "status_changed" || last.type === "assigned") {
-        refetch();
-      }
+    if (refreshSignal === 0) return;
+
+    if (lastTicketId) {
+      // Optimized: Only fetch the updated ticket and update it in the local state
+      api.get<Ticket>(`/tickets/${lastTicketId}`)
+        .then(({ data }) => {
+          setTickets((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+        })
+        .catch((err) => {
+          console.error("Failed to fetch partial update, falling back to full refetch", err);
+          refetch();
+        });
+    } else {
+      // Fallback: Full refresh for general events
+      refetch();
     }
-  }, [notifications, refetch]);
+  }, [refreshSignal, lastTicketId, refetch]);
 
   useEffect(() => {
     let cancelled = false;

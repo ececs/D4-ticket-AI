@@ -18,7 +18,8 @@ import { useRouter } from "next/navigation";
 import { Ticket, TicketFilters, TicketPriority, TicketStatus } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { STATUS_LABELS, PRIORITY_CONFIG, timeAgo } from "@/lib/utils";
-import { ChevronUp, ChevronDown, ChevronsUpDown, Trash2, ExternalLink } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronsUpDown, Trash2, ExternalLink, CheckSquare, Square } from "lucide-react";
+import { useSelectionStore } from "@/store/useSelectionStore";
 
 const STATUSES: TicketStatus[] = ["open", "in_progress", "in_review", "closed"];
 const PRIORITIES: TicketPriority[] = ["low", "medium", "high", "critical"];
@@ -59,6 +60,16 @@ export function TicketTable({
     setSortBy(field);
     setSortDir(newDir);
     onFiltersChange({ ...filters, sort_by: field, sort_dir: newDir });
+  };
+
+  const { selectedTicketIds, toggleTicket, setSelection } = useSelectionStore();
+
+  const handleSelectAll = () => {
+    if (selectedTicketIds.length === tickets.length && tickets.length > 0) {
+      setSelection([]);
+    } else {
+      setSelection(tickets.map(t => t.id));
+    }
   };
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
@@ -127,6 +138,17 @@ export function TicketTable({
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
+              <th className="px-4 py-3 w-10">
+                <button 
+                  onClick={handleSelectAll}
+                  className="text-slate-400 hover:text-blue-600 transition-colors"
+                >
+                  {selectedTicketIds.length === tickets.length && tickets.length > 0 
+                    ? <CheckSquare className="w-4 h-4" /> 
+                    : <Square className="w-4 h-4" />
+                  }
+                </button>
+              </th>
               <th className="text-left px-4 py-3">
                 <ColHeader field="title" label="Title" />
               </th>
@@ -176,8 +198,26 @@ export function TicketTable({
                 <tr
                   key={ticket.id}
                   onClick={() => router.push(`/tickets/${ticket.id}`)}
-                  className="hover:bg-slate-50 cursor-pointer transition-colors group"
+                  className={`hover:bg-slate-50 cursor-pointer transition-colors group ${
+                    selectedTicketIds.includes(ticket.id) ? "bg-blue-50/50" : ""
+                  }`}
                 >
+                  {/* Selection Checkbox */}
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => toggleTicket(ticket.id)}
+                      className={`${
+                        selectedTicketIds.includes(ticket.id) 
+                          ? "text-blue-600" 
+                          : "text-slate-300 hover:text-slate-400"
+                      } transition-colors`}
+                    >
+                      {selectedTicketIds.includes(ticket.id) 
+                        ? <CheckSquare className="w-4 h-4" /> 
+                        : <Square className="w-4 h-4" />
+                      }
+                    </button>
+                  </td>
                   {/* Title */}
                   <td className="px-4 py-3">
                     <span className="font-medium text-slate-800 group-hover:text-blue-600 transition-colors line-clamp-1">

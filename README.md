@@ -13,7 +13,7 @@
 ### 🚀 Características Principales
 
 *   **🤖 Asistente AI Co-pilot**: Compañero de chat persistente integrado. Usa **Tool Calling** para ejecutar acciones reales (crear/asignar tickets) y **RAG** para responder preguntas basadas en el historial técnico.
-*   **🔍 Búsqueda Semántica**: Potenciado por `pgvector`. El sistema entiende el *significado* de tus búsquedas, no solo palabras clave. Encuentra bugs relacionados o peticiones similares al instante.
+*   **🔍 RAG Dinámico (Web Scraper)**: Cada ticket puede incluir una **URL del Cliente**. El sistema escanea la landing page en segundo plano e indexa su contenido para que la IA proporcione diagnósticos personalizados basados en el contexto real del cliente.
 *   **📋 Tablero Kanban Interactivo**: Gestión visual con drag-and-drop y actualización optimista de estado.
 *   **🔐 Auth Empresarial & Demo**: Integración con Google SSO y un modo **Demo Access** (código secreto) para evaluadores rápidos.
 *   **📎 Adjuntos Inteligentes**: Gestión escalable de archivos con **Cloudflare R2** (S3-compatible).

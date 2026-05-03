@@ -39,6 +39,19 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
     BACKEND_URL: str = "http://localhost:8000"
     
+    # CORS Origins: Allowed origins for cross-domain requests
+    CORS_ORIGINS: Any = [
+        "http://localhost:3000",
+        "https://frontend-eight-chi-54.vercel.app"
+    ]
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            return [i.strip() for i in v.split(",") if i.strip()]
+        return v
+
     # List of emails allowed to log in. Use ["*"] to allow anyone.
     # Supports domains: use "@domain.com" to allow everyone from that org.
     # In production, set this to your email and "@orbidi.com".

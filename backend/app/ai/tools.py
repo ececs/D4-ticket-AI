@@ -22,6 +22,7 @@ Architecture:
 
 import uuid
 import logging
+import asyncio
 from typing import Optional, List, Type
 from pydantic import BaseModel, Field
 
@@ -32,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.ticket import Ticket, TicketStatus, TicketPriority
 from app.models.user import User
 from app.models.comment import Comment
-from app.services import ticket_service, notification_service, knowledge_service, comment_service, ai_copilot_service
+from app.services import ticket_service, notification_service, knowledge_service, comment_service, scraping_service
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,8 @@ class CreateTicketSchema(BaseModel):
     description: Optional[str] = Field(None, description="Detailed context")
     priority: str = Field("medium", description="low, medium, high, or critical")
     assignee_email: Optional[str] = Field(None, description="Email of the user to assign")
+    client_url: Optional[str] = Field(None, description="Client's website URL for analysis")
+    client_summary: Optional[str] = Field(None, description="Brief summary of who the client is and what they do")
 
 class ChangeStatusSchema(BaseModel):
     ticket_id: str = Field(..., description="UUID of the ticket")
@@ -61,9 +64,14 @@ class AddCommentSchema(BaseModel):
     ticket_id: str = Field(..., description="UUID of the target ticket")
     content: str = Field(..., description="Text content of the comment")
 
-class ReassignTicketSchema(BaseModel):
+class UpdateTicketSchema(BaseModel):
     ticket_id: str = Field(..., description="UUID of the ticket")
-    assignee_email: Optional[str] = Field(None, description="New assignee email, or None to unassign")
+    title: Optional[str] = Field(None, description="New title")
+    description: Optional[str] = Field(None, description="New description")
+    priority: Optional[str] = Field(None, description="New priority: low, medium, high, critical")
+    assignee_email: Optional[str] = Field(None, description="New assignee email, or 'unassign'")
+    client_url: Optional[str] = Field(None, description="New client website URL")
+    client_summary: Optional[str] = Field(None, description="New client profile summary")
 
 class SearchKnowledgeSchema(BaseModel):
     query: str = Field(..., description="The question or search phrase")
@@ -78,134 +86,167 @@ def make_tools(db: AsyncSession, actor: User) -> List:
     """
     Returns a collection of validated tools for the AI agent.
     """
+    lock = asyncio.Lock()
 
     @tool(args_schema=QueryTicketsSchema)
     async def query_tickets(status=None, priority=None, search=None, limit=10) -> str:
         """List tickets with optional filters. Results include status, priority, and title."""
         logger.info(f"AI Tool: query_tickets(status={status}, priority={priority}, search={search})")
-        try:
-            stmt = select(Ticket)
-            if status:
-                try:
-                    stmt = stmt.where(Ticket.status == TicketStatus(status))
-                except ValueError:
-                    return f"Invalid status '{status}'."
-            if priority:
-                try:
-                    stmt = stmt.where(Ticket.priority == TicketPriority(priority))
-                except ValueError:
-                    return f"Invalid priority '{priority}'."
-            if search:
-                stmt = stmt.where(Ticket.title.ilike(f"%{search}%"))
+        async with lock:
+            try:
+                stmt = select(Ticket)
+                if status:
+                    try:
+                        stmt = stmt.where(Ticket.status == TicketStatus(status))
+                    except ValueError:
+                        return f"Invalid status '{status}'."
+                if priority:
+                    try:
+                        stmt = stmt.where(Ticket.priority == TicketPriority(priority))
+                    except ValueError:
+                        return f"Invalid priority '{priority}'."
+                if search:
+                    stmt = stmt.where(Ticket.title.ilike(f"%{search}%"))
 
-            # Sort by priority (Critical > High > Medium > Low) then by oldest first (FIFO)
-            priority_order = case(
-                (Ticket.priority == TicketPriority.critical, 1),
-                (Ticket.priority == TicketPriority.high, 2),
-                (Ticket.priority == TicketPriority.medium, 3),
-                (Ticket.priority == TicketPriority.low, 4),
-                else_=5
-            )
-            stmt = stmt.limit(limit).order_by(priority_order, Ticket.created_at.asc())
-            
-            logger.info(f"Executing query_tickets with limit {limit}")
-            result = await db.execute(stmt)
-            tickets = result.scalars().all()
-            logger.info(f"Query finished, found {len(tickets)} tickets")
+                # Sort by priority (Critical > High > Medium > Low) then by oldest first (FIFO)
+                priority_order = case(
+                    (Ticket.priority == TicketPriority.critical, 1),
+                    (Ticket.priority == TicketPriority.high, 2),
+                    (Ticket.priority == TicketPriority.medium, 3),
+                    (Ticket.priority == TicketPriority.low, 4),
+                    else_=5
+                )
+                stmt = stmt.limit(limit).order_by(priority_order, Ticket.created_at.asc())
+                
+                logger.info(f"Executing query_tickets with limit {limit}")
+                result = await db.execute(stmt)
+                tickets = result.scalars().all()
+                logger.info(f"Query finished, found {len(tickets)} tickets")
 
-            if not tickets:
-                return "No tickets found with the specified filters."
+                if not tickets:
+                    return "No tickets found with the specified filters."
 
-            return "\n".join([f"  [{t.status.value}] [{t.priority.value}] {t.title} (ID: {t.id})" for t in tickets])
-        except Exception as e:
-            return f"Error: {e}"
+                return "\n".join([f"  [{t.status.value}] [{t.priority.value}] {t.title} (ID: {t.id})" for t in tickets])
+            except Exception as e:
+                return f"Error: {e}"
 
     @tool(args_schema=GetTicketSchema)
     async def get_ticket(ticket_id: str) -> str:
         """Get full details of a single ticket."""
-        try:
-            tid = uuid.UUID(ticket_id)
-            ticket = await ticket_service.get_ticket(db, tid)
-            if not ticket:
-                return "Ticket not found."
-            return f"Title: {ticket.title}\nStatus: {ticket.status.value}\nDescription: {ticket.description}"
-        except Exception as e:
-            return f"Error: {e}"
+        async with lock:
+            try:
+                tid = uuid.UUID(ticket_id)
+                ticket = await ticket_service.get_ticket(db, tid)
+                if not ticket:
+                    return "Ticket not found."
+                return f"Title: {ticket.title}\nStatus: {ticket.status.value}\nDescription: {ticket.description}"
+            except Exception as e:
+                return f"Error: {e}"
 
     @tool(args_schema=CreateTicketSchema)
-    async def create_ticket(title, description=None, priority="medium", assignee_email=None) -> str:
-        """Create a new support ticket."""
-        try:
-            prio = TicketPriority(priority)
-            assignee_id = None
-            if assignee_email:
-                res = await db.execute(select(User).where(User.email == assignee_email))
-                user = res.scalar_one_or_none()
-                if not user: return f"User {assignee_email} not found."
-                assignee_id = user.id
+    async def create_ticket(title, description=None, priority="medium", assignee_email=None, client_url=None, client_summary=None) -> str:
+        """Create a new support ticket with optional client context (URL/Summary)."""
+        async with lock:
+            try:
+                prio = TicketPriority(priority)
+                assignee_id = None
+                if assignee_email:
+                    res = await db.execute(select(User).where(User.email == assignee_email))
+                    user = res.scalar_one_or_none()
+                    if not user: return f"User {assignee_email} not found."
+                    assignee_id = user.id
 
-            ticket = await ticket_service.create_ticket(
-                db, 
-                title=title, 
-                description=description, 
-                priority=prio, 
-                author_id=actor.id, 
-                assignee_id=assignee_id
-            )
-            return f"Ticket created. ID: {ticket.id}"
-        except Exception as e:
-            return f"Error: {e}"
+                ticket = await ticket_service.create_ticket(
+                    db, 
+                    title=title, 
+                    description=description, 
+                    priority=prio, 
+                    author_id=actor.id, 
+                    assignee_id=assignee_id,
+                    client_url=client_url,
+                    client_summary=client_summary
+                )
+                return f"Ticket created. ID: {ticket.id}"
+            except Exception as e:
+                return f"Error: {e}"
 
     @tool(args_schema=ChangeStatusSchema)
     async def change_status(ticket_id: str, new_status: str) -> str:
         """Update a ticket's status."""
-        try:
-            tid = uuid.UUID(ticket_id)
-            status = TicketStatus(new_status)
-            ticket = await ticket_service.change_status(db, tid, status, actor)
-            if not ticket: return "Ticket not found."
-            return f"Status updated to {new_status}."
-        except Exception as e:
-            return f"Error: {e}"
+        async with lock:
+            try:
+                tid = uuid.UUID(ticket_id)
+                status = TicketStatus(new_status)
+                ticket = await ticket_service.change_status(db, tid, status, actor)
+                if not ticket: return "Ticket not found."
+                return f"Status updated to {new_status}."
+            except Exception as e:
+                return f"Error: {e}"
 
     @tool(args_schema=AddCommentSchema)
     async def add_comment(ticket_id: str, content: str) -> str:
         """Add a comment to a ticket thread."""
-        try:
-            tid = uuid.UUID(ticket_id)
-            comment = await comment_service.create_comment(db, ticket_id=tid, content=content, author=actor)
-            if not comment:
-                return f"Ticket {ticket_id} not found."
+        async with lock:
+            try:
+                tid = uuid.UUID(ticket_id)
+                comment = await comment_service.create_comment(db, ticket_id=tid, content=content, author=actor)
+                if not comment:
+                    return f"Ticket {ticket_id} not found."
 
-            return "Comment successfully added."
-        except Exception as e:
-            return f"Error: {e}"
+                return "Comment successfully added."
+            except Exception as e:
+                return f"Error: {e}"
 
-    @tool(args_schema=ReassignTicketSchema)
-    async def reassign_ticket(ticket_id: str, assignee_email=None) -> str:
-        """Change the ticket assignee."""
-        try:
-            tid = uuid.UUID(ticket_id)
-            assignee_id = None
-            if assignee_email:
-                res = await db.execute(select(User).where(User.email == assignee_email))
-                user = res.scalar_one_or_none()
-                if not user: return "User not found."
-                assignee_id = user.id
-            
-            await ticket_service.reassign(db, tid, assignee_id, actor)
-            return "Ticket reassigned."
-        except Exception as e:
-            return f"Error: {e}"
+    @tool(args_schema=UpdateTicketSchema)
+    async def update_ticket(
+        ticket_id: str, 
+        title=None, 
+        description=None, 
+        priority=None, 
+        assignee_email=None, 
+        client_url=None, 
+        client_summary=None
+    ) -> str:
+        """Update any ticket field, including client context (URL/Summary). Use 'unassign' for assignee to clear it."""
+        async with lock:
+            try:
+                tid = uuid.UUID(ticket_id)
+                update_data = {}
+                if title: update_data["title"] = title
+                if description: update_data["description"] = description
+                if priority: update_data["priority"] = TicketPriority(priority)
+                if client_url: update_data["client_url"] = client_url
+                if client_summary: update_data["client_summary"] = client_summary
+                
+                if assignee_email:
+                    if assignee_email.lower() == "unassign":
+                        update_data["assignee_id"] = None
+                    else:
+                        res = await db.execute(select(User).where(User.email == assignee_email))
+                        user = res.scalar_one_or_none()
+                        if not user: return f"User {assignee_email} not found."
+                        update_data["assignee_id"] = user.id
+
+                updated_ticket = await ticket_service.update_ticket(db, tid, update_data, actor)
+                
+                # If URL changed, trigger background scraping
+                if client_url:
+                    import asyncio
+                    asyncio.create_task(scraping_service.scrape_and_index_url(db, tid, client_url))
+
+                return "Ticket successfully updated."
+            except Exception as e:
+                return f"Error: {e}"
 
     @tool(args_schema=SearchKnowledgeSchema)
     async def search_knowledge(query: str, k: int = 5) -> str:
         """Query the knowledge base."""
-        try:
-            chunks = await knowledge_service.search(db, query, k=k)
-            return "\n\n".join(chunks) if chunks else "No information found."
-        except Exception as e:
-            return f"Error: {e}"
+        async with lock:
+            try:
+                chunks = await knowledge_service.search(db, query, k=k)
+                return "\n\n".join(chunks) if chunks else "No information found."
+            except Exception as e:
+                return f"Error: {e}"
 
     @tool(args_schema=AIDiagnoseSchema)
     async def ai_diagnose_ticket(ticket_id: str) -> str:
@@ -213,12 +254,14 @@ def make_tools(db: AsyncSession, actor: User) -> List:
         AI Co-pilot: Generate a detailed diagnosis and suggested solution for a ticket.
         Uses ticket context, comment history, and knowledge base (RAG).
         """
-        try:
-            tid = uuid.UUID(ticket_id)
-            diagnosis = await ai_copilot_service.get_ticket_diagnosis(db, tid)
-            return diagnosis
-        except Exception as e:
-            return f"Error al generar diagnóstico: {e}"
+        async with lock:
+            try:
+                from app.services import ai_copilot_service
+                tid = uuid.UUID(ticket_id)
+                diagnosis = await ai_copilot_service.get_ticket_diagnosis(db, tid)
+                return diagnosis
+            except Exception as e:
+                return f"Error al generar diagnóstico: {e}"
 
     return [
         query_tickets, 
@@ -226,7 +269,7 @@ def make_tools(db: AsyncSession, actor: User) -> List:
         create_ticket, 
         change_status, 
         add_comment, 
-        reassign_ticket, 
+        update_ticket, 
         search_knowledge,
         ai_diagnose_ticket
     ]

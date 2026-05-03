@@ -187,6 +187,29 @@ async def notify_status_changed(
         )
 
 
+async def notify_ticket_updated(
+    db: AsyncSession,
+    ticket: Ticket,
+    actor: User,
+) -> None:
+    """
+    Notify author and assignee that a ticket has been updated (e.g. priority change).
+    This triggers real-time UI refreshes.
+    """
+    users_to_notify = {ticket.author_id}
+    if ticket.assignee_id:
+        users_to_notify.add(ticket.assignee_id)
+
+    for user_id in users_to_notify:
+        await _create_notification(
+            db,
+            user_id=user_id,
+            notification_type=NotificationType.status_changed,
+            ticket_id=ticket.id,
+            message=f'{actor.name} updated ticket: "{ticket.title}"',
+        )
+
+
 async def list_notifications(
     db: AsyncSession, 
     user_id: uuid.UUID, 

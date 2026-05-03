@@ -29,7 +29,7 @@ const WS_URL = process.env.NEXT_PUBLIC_API_URL?.replace("http", "ws") ?? "ws://l
 export function useWebSocket(token: string | null) {
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
-  const { addNotification } = useNotificationStore();
+  const { addNotification, triggerRefresh } = useNotificationStore();
 
   useEffect(() => {
     if (!token) return; // Not authenticated yet
@@ -52,15 +52,20 @@ export function useWebSocket(token: string | null) {
           // Ignore keepalive pings and any message without the required fields
           if (data.type === "ping" || !data.id || !data.ticket_id) return;
           addNotification(data as unknown as Notification);
+          
+          // Trigger a refresh of any components listening to the refresh signal
+          // Pass the specific ticket ID for targeted partial updates
+          triggerRefresh(String(data.ticket_id));
         } catch {
           // Ignore malformed messages
         }
       };
 
       socket.onclose = (event) => {
-        if (!event.wasClean) {
-          // Unexpected close — schedule reconnect after 3 seconds
-          reconnectTimeout.current = setTimeout(connect, 3000);
+        console.log(`WebSocket closed: ${event.code} ${event.reason}`);
+        // Attempt to reconnect after 2 seconds unless it was a clean close
+        if (event.code !== 1000) {
+          reconnectTimeout.current = setTimeout(connect, 2000);
         }
       };
 

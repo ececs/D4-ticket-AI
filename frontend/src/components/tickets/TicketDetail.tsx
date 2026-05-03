@@ -17,7 +17,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, Paperclip, Trash2, Download, MessageSquare, Send, Loader2, Sparkles, RefreshCw,
+  ArrowLeft, Paperclip, Trash2, Download, MessageSquare, Send, Loader2, Sparkles, RefreshCw, Globe, ExternalLink, Info,
 } from "lucide-react";
 import api from "@/lib/api";
 import {
@@ -50,6 +50,10 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
   const [titleDraft, setTitleDraft] = useState("");
   const [editingDesc, setEditingDesc] = useState(false);
   const [descDraft, setDescDraft] = useState("");
+  const [editingUrl, setEditingUrl] = useState(false);
+  const [urlDraft, setUrlDraft] = useState("");
+  const [editingSummary, setEditingSummary] = useState(false);
+  const [summaryDraft, setSummaryDraft] = useState("");
 
   // Comment form state
   const [commentText, setCommentText] = useState("");
@@ -115,6 +119,20 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
   const saveDesc = async () => {
     await patchTicket({ description: descDraft });
     setEditingDesc(false);
+  };
+
+  const saveUrl = async () => {
+    if (urlDraft !== ticket?.client_url) {
+      await patchTicket({ client_url: urlDraft.trim() || null });
+    }
+    setEditingUrl(false);
+  };
+
+  const saveSummary = async () => {
+    if (summaryDraft !== ticket?.client_summary) {
+      await patchTicket({ client_summary: summaryDraft.trim() || null });
+    }
+    setEditingSummary(false);
   };
 
   // ── Comments ─────────────────────────────────────────────────────────────
@@ -322,6 +340,112 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
               </div>
             </div>
           )}
+
+          {/* Client URL Context */}
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+                <Globe className="w-4 h-4 text-blue-500" /> Web del Cliente
+              </h2>
+              {ticket.client_url && !editingUrl && (
+                <a 
+                  href={ticket.client_url} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1"
+                >
+                  Visitar <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </div>
+            
+            {editingUrl ? (
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  value={urlDraft}
+                  onChange={(e) => setUrlDraft(e.target.value)}
+                  placeholder="https://example.com"
+                  className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button 
+                  onClick={saveUrl}
+                  className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  OK
+                </button>
+                <button 
+                  onClick={() => setEditingUrl(false)}
+                  className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg"
+                >
+                  X
+                </button>
+              </div>
+            ) : (
+              <p 
+                onClick={() => { setUrlDraft(ticket.client_url ?? ""); setEditingUrl(true); }}
+                className="text-sm text-slate-600 cursor-text hover:bg-slate-50 rounded-lg p-2 -m-2 transition-colors flex items-center gap-2"
+                title="Click para editar URL"
+              >
+                {ticket.client_url ? (
+                  <span className="truncate">{ticket.client_url}</span>
+                ) : (
+                  <span className="text-slate-400 italic">No hay web vinculada. Haz clic para añadir una.</span>
+                )}
+              </p>
+            )}
+            {ticket.client_url && (
+              <p className="text-[10px] text-slate-400 mt-2">
+                La IA usa esta web para enriquecer el diagnóstico técnico.
+              </p>
+            )}
+          </div>
+
+          {/* Client Summary Context */}
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <h2 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-1.5">
+              <Info className="w-4 h-4 text-indigo-500" /> Perfil del Cliente
+            </h2>
+            
+            {editingSummary ? (
+              <div className="space-y-2">
+                <textarea
+                  autoFocus
+                  value={summaryDraft}
+                  onChange={(e) => setSummaryDraft(e.target.value)}
+                  placeholder="Describe al cliente, tecnologías, importancia..."
+                  rows={3}
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                />
+                <div className="flex gap-2">
+                  <button 
+                    onClick={saveSummary}
+                    className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    Guardar
+                  </button>
+                  <button 
+                    onClick={() => setEditingSummary(false)}
+                    className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p 
+                onClick={() => { setSummaryDraft(ticket.client_summary ?? ""); setEditingSummary(true); }}
+                className="text-sm text-slate-600 cursor-text hover:bg-slate-50 rounded-lg p-2 -m-2 transition-colors min-h-[40px]"
+                title="Click para editar resumen"
+              >
+                {ticket.client_summary ? (
+                  ticket.client_summary
+                ) : (
+                  <span className="text-slate-400 italic">Sin resumen. Haz clic para añadir contexto del cliente.</span>
+                )}
+              </p>
+            )}
+          </div>
 
           {/* Description */}
           <div className="bg-white rounded-xl border border-slate-200 p-4">

@@ -17,7 +17,10 @@ import api from "@/lib/api";
 interface NotificationState {
   notifications: Notification[];
   unreadCount: number;
+  refreshSignal: number;
+  lastTicketId: string | null;
   addNotification: (notification: Notification) => void;
+  triggerRefresh: (ticketId?: string) => void;
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
   setNotifications: (notifications: Notification[]) => void;
@@ -26,16 +29,33 @@ interface NotificationState {
 const useNotificationStore = create<NotificationState>((set, get) => ({
   notifications: [],
   unreadCount: 0,
+  refreshSignal: 0,
+  lastTicketId: null,
+
+  triggerRefresh: (ticketId) => 
+    set((state) => ({ 
+      refreshSignal: state.refreshSignal + 1,
+      lastTicketId: ticketId || null
+    })),
 
   setNotifications: (notifications) => {
+    // Use a Map to ensure absolute uniqueness by ID
+    const uniqueMap = new Map();
+    notifications.forEach((n) => uniqueMap.set(n.id, n));
+    const unique = Array.from(uniqueMap.values());
+    
     set({
-      notifications,
-      unreadCount: notifications.filter((n) => !n.read).length,
+      notifications: unique,
+      unreadCount: unique.filter((n) => !n.read).length,
     });
   },
 
   addNotification: (notification) => {
     set((state) => {
+      // If we already have this notification, don't add it again
+      if (state.notifications.some((n) => n.id === notification.id)) {
+        return state;
+      }
       const updated = [notification, ...state.notifications];
       return {
         notifications: updated,

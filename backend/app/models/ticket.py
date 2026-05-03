@@ -88,6 +88,9 @@ class Ticket(Base):
     author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     assignee_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
+    client_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    client_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Semantic search — 768-dim embedding of title + description.
     # Generated asynchronously on create/update; NULL until first embedding run.
     embedding: Mapped[Optional[list]] = mapped_column(_EMBEDDING_TYPE, nullable=True)

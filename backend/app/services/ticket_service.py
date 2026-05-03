@@ -23,7 +23,8 @@ from sqlalchemy.orm import selectinload
 from app.models.ticket import Ticket, TicketStatus, TicketPriority
 from app.models.user import User
 from app.schemas.ticket import TicketOut
-from app.services import notification_service
+import asyncio
+from . import notification_service, embedding_service, scraping_service
 
 
 async def get_ticket(db: AsyncSession, ticket_id: uuid.UUID) -> Optional[TicketOut]:
@@ -61,6 +62,8 @@ async def create_ticket(
     priority: TicketPriority,
     author_id: uuid.UUID,
     assignee_id: Optional[uuid.UUID] = None,
+    client_url: Optional[str] = None,
+    client_summary: Optional[str] = None,
 ) -> TicketOut:
     """
     Creates a new ticket and notifies the system.
@@ -72,6 +75,8 @@ async def create_ticket(
         priority=priority,
         author_id=author_id,
         assignee_id=assignee_id,
+        client_url=client_url,
+        client_summary=client_summary,
     )
     db.add(ticket)
     await db.flush() # Get the ID for notifications
@@ -86,8 +91,39 @@ async def create_ticket(
     # 3. Finalize
     await db.commit()
     
-    # 4. Return decoupled schema
+    # 4. Background tasks
+    asyncio.create_task(generate_ticket_embedding_task(ticket.id, title, description))
+    if client_url:
+        asyncio.create_task(scraping_service.scrape_and_index_url(ticket.id, client_url))
+        
+    # 5. Return decoupled schema
     return await get_ticket(db, ticket.id) # type: ignore
+
+
+async def generate_ticket_embedding_task(ticket_id: uuid.UUID, title: str, description: Optional[str]) -> None:
+    """
+    Background task to generate and persist ticket embedding.
+    
+    Uses a dedicated session factory to ensure isolation from the request lifecycle.
+    """
+    embedding = await embedding_service.generate_ticket_embedding(title, description)
+    if embedding is None:
+        return
+
+    try:
+        from app.db.session import async_session_factory
+        async with async_session_factory() as session:
+            result = await session.execute(select(Ticket).where(Ticket.id == ticket_id))
+            ticket = result.scalar_one_or_none()
+            if ticket:
+                ticket.embedding = embedding
+                await session.commit()
+                logging.getLogger(__name__).info(f"Ticket Service: Persistent embedding for ticket {ticket_id}")
+    except Exception as exc:
+        logging.getLogger(__name__).error(
+            f"Ticket Service: Failed to persist embedding for {ticket_id}: {str(exc)}", 
+            exc_info=True
+        )
 
 
 async def change_status(
@@ -173,4 +209,61 @@ async def reassign(
     await db.commit()
     
     # 5. Return decoupled schema
+    return await get_ticket(db, ticket_id)
+
+
+async def update_ticket(
+    db: AsyncSession,
+    ticket_id: uuid.UUID,
+    update_data: dict,
+    actor: User,
+) -> Optional[TicketOut]:
+    """
+    Generalized update for any ticket field.
+    """
+    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = result.scalar_one_or_none()
+    
+    if not ticket:
+        return None
+
+    old_status = ticket.status
+    old_assignee_id = ticket.assignee_id
+
+    # Apply updates
+    for key, value in update_data.items():
+        if hasattr(ticket, key):
+            setattr(ticket, key, value)
+    
+    await db.flush()
+
+    # --- Side effects (Notifications) ---
+    if "status" in update_data and update_data["status"] != old_status:
+        await notification_service.notify_status_changed(
+            db, ticket=ticket, actor=actor, new_status=update_data["status"]
+        )
+
+    if "assignee_id" in update_data and update_data["assignee_id"] != old_assignee_id:
+        if update_data["assignee_id"]:
+            res = await db.execute(select(User).where(User.id == update_data["assignee_id"]))
+            new_assignee = res.scalar_one_or_none()
+            if new_assignee:
+                await notification_service.notify_ticket_assigned(
+                    db, ticket=ticket, assignee=new_assignee, actor=actor
+                )
+        
+    # Generic update notification to trigger UI refreshes
+    await notification_service.notify_ticket_updated(db, ticket=ticket, actor=actor)
+
+    await db.commit()
+
+    # --- Side effects (Background Tasks) ---
+    if "title" in update_data or "description" in update_data:
+        new_title = update_data.get("title", ticket.title)
+        new_desc = update_data.get("description", ticket.description)
+        asyncio.create_task(generate_ticket_embedding_task(ticket_id, new_title, new_desc))
+
+    if "client_url" in update_data and update_data["client_url"]:
+        asyncio.create_task(scraping_service.scrape_and_index_url(ticket_id, update_data["client_url"]))
+
     return await get_ticket(db, ticket_id)

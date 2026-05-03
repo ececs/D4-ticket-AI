@@ -22,6 +22,8 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { X, Send, Bot, Loader2, Wrench, RotateCcw } from "lucide-react";
+import { useParams } from "next/navigation";
+import { useSelectionStore } from "@/store/useSelectionStore";
 import { ChatMessage } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -53,6 +55,10 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
   useEffect(() => {
     localStorage.setItem("ai_thread_id", threadIdRef.current);
   }, []);
+
+  const params = useParams();
+  const currentTicketId = params?.id as string | undefined;
+  const { selectedTicketIds } = useSelectionStore();
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -112,6 +118,8 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
         body: JSON.stringify({
           messages: historyToSend,
           thread_id: threadIdRef.current,
+          current_ticket_id: currentTicketId,
+          selected_ticket_ids: selectedTicketIds,
         }),
         signal: abortRef.current.signal,
       });
@@ -161,6 +169,15 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
                     : m
                 )
               );
+            } else if (event.type === "error" && event.content) {
+              // Show configuration/server error in the chat
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, content: event.content || "Error del servidor." }
+                    : m
+                )
+              );
             } else if (event.type === "tool_call" && event.name) {
               // Append executed action to the actions list
               const actionLabel = formatToolAction(event.name, event.result ?? "");
@@ -185,9 +202,9 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId
-            ? {
+              ? {
                 ...m,
-                content: "Sorry, something went wrong. Please try again.",
+                content: `Error: No se pudo conectar con la IA (${err instanceof Error ? err.message : "Algo salió mal"}).`,
               }
             : m
         )
@@ -213,7 +230,10 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
         </div>
         <div className="flex-1">
           <p className="text-sm font-semibold text-white">AI Assistant</p>
-          <p className="text-[10px] text-blue-200">Powered by LangGraph · memory enabled</p>
+          <p className="text-[10px] text-blue-200">
+            Powered by LangGraph · 
+            {selectedTicketIds.length > 0 ? ` ${selectedTicketIds.length} tickets selected` : " memory enabled"}
+          </p>
         </div>
         <button
           onClick={() => {
