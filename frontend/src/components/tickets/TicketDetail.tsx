@@ -278,7 +278,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
 
               {/* AI Diagnosis Button */}
               <button
-                onClick={handleAIDiagnose}
+                onClick={() => handleAIDiagnose()}
                 disabled={isDiagnosing}
                 className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 transition-all shadow-sm disabled:opacity-50"
               >
