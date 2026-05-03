@@ -17,7 +17,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, Paperclip, Trash2, Download, MessageSquare, Send, Loader2,
+  ArrowLeft, Paperclip, Trash2, Download, MessageSquare, Send, Loader2, Sparkles,
 } from "lucide-react";
 import api from "@/lib/api";
 import {
@@ -57,7 +57,9 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
 
   // Attachment upload state
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  // AI Diagnosis state
+  const [isDiagnosing, setIsDiagnosing] = useState(false);
+  const [aiDiagnosis, setAiDiagnosis] = useState<string | null>(null);
 
   // ── Fetch ticket, comments, attachments ──────────────────────────────────
 
@@ -164,6 +166,22 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
     setAttachments((prev) => prev.filter((a) => a.id !== attId));
   };
 
+  // ── AI Diagnosis ─────────────────────────────────────────────────────────
+
+  const handleAIDiagnose = async () => {
+    setIsDiagnosing(true);
+    setAiDiagnosis(null);
+    try {
+      const { data } = await api.post<{ diagnosis: string }>(`/tickets/${ticketId}/ai-diagnose`);
+      setAiDiagnosis(data.diagnosis);
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { detail?: string } } };
+      alert(axiosErr.response?.data?.detail ?? "Error al generar diagnóstico");
+    } finally {
+      setIsDiagnosing(false);
+    }
+  };
+
   // ── Render ───────────────────────────────────────────────────────────────
 
   if (isLoading) {
@@ -246,8 +264,45 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
               <Badge variant={ticket.status}>
                 {STATUS_LABELS[ticket.status]}
               </Badge>
+
+              {/* AI Diagnosis Button */}
+              <button
+                onClick={handleAIDiagnose}
+                disabled={isDiagnosing}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 transition-all shadow-sm disabled:opacity-50"
+              >
+                {isDiagnosing ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5" />
+                )}
+                Diagnóstico IA
+              </button>
             </div>
           </div>
+
+          {/* AI Diagnosis Results */}
+          {aiDiagnosis && (
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-4 shadow-sm relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-2">
+                <Sparkles className="w-4 h-4 text-blue-400 opacity-20 group-hover:opacity-100 transition-opacity" />
+              </div>
+              <h3 className="text-xs font-bold text-blue-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                Análisis Técnico IA
+              </h3>
+              <p className="text-sm text-slate-700 leading-relaxed italic whitespace-pre-wrap">
+                {aiDiagnosis}
+              </p>
+              <div className="mt-3 flex justify-end">
+                <button 
+                  onClick={() => setAiDiagnosis(null)}
+                  className="text-[10px] text-blue-400 hover:text-blue-600 font-medium"
+                >
+                  Cerrar análisis
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Description */}
           <div className="bg-white rounded-xl border border-slate-200 p-4">
