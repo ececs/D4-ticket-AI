@@ -30,7 +30,7 @@ const WS_URL = process.env.NEXT_PUBLIC_API_URL?.replace("http", "ws") ?? "ws://l
 export function useWebSocket(token: string | null) {
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
-  const { addNotification, triggerRefresh } = useNotificationStore();
+  const { addNotification, triggerRefresh, syncUnreadCount } = useNotificationStore();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -70,9 +70,14 @@ export function useWebSocket(token: string | null) {
 
             case "notification":
               if (data && data.id) {
-                addNotification(data as unknown as Notification);
+                // Pass the server's authoritative unread_count so the badge is
+                // always accurate even when the notification is a duplicate.
+                addNotification(
+                  data as unknown as Notification,
+                  typeof data.unread_count === "number" ? data.unread_count : undefined,
+                );
                 if (data.ticket_id) triggerRefresh(String(data.ticket_id));
-                
+
                 toast({
                   title: "Nueva Notificación",
                   description: data.message || "Tienes una nueva actualización.",
@@ -87,11 +92,18 @@ export function useWebSocket(token: string | null) {
               break;
               
             case "system_alert":
-              toast({
-                title: "Aviso del Sistema",
-                description: message,
-                variant: type.includes("error") ? "destructive" : "default",
-              });
+              // Sync badge with the authoritative count from the initial WS handshake
+              if (data && typeof data.unread_count === "number") {
+                syncUnreadCount(data.unread_count);
+              }
+              // Only show a toast for real alerts, not for the connection handshake
+              if (message && message !== "Estado inicial cargado") {
+                toast({
+                  title: "Aviso del Sistema",
+                  description: message,
+                  variant: message.toLowerCase().includes("error") ? "destructive" : "default",
+                });
+              }
               break;
 
             default:

@@ -19,7 +19,8 @@ interface NotificationState {
   unreadCount: number;
   refreshSignal: number;
   lastTicketId: string | null;
-  addNotification: (notification: Notification) => void;
+  addNotification: (notification: Notification, serverUnreadCount?: number) => void;
+  syncUnreadCount: (count: number) => void;
   triggerRefresh: (ticketId?: string) => void;
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
@@ -32,11 +33,14 @@ const useNotificationStore = create<NotificationState>((set, get) => ({
   refreshSignal: 0,
   lastTicketId: null,
 
-  triggerRefresh: (ticketId) => 
-    set((state) => ({ 
+  triggerRefresh: (ticketId) =>
+    set((state) => ({
       refreshSignal: state.refreshSignal + 1,
       lastTicketId: ticketId || null
     })),
+
+  // Sync badge count directly from the server-authoritative value
+  syncUnreadCount: (count) => set({ unreadCount: count }),
 
   setNotifications: (notifications) => {
     // Use a Map to ensure absolute uniqueness by ID
@@ -50,16 +54,21 @@ const useNotificationStore = create<NotificationState>((set, get) => ({
     });
   },
 
-  addNotification: (notification) => {
+  addNotification: (notification, serverUnreadCount) => {
     set((state) => {
-      // If we already have this notification, don't add it again
       if (state.notifications.some((n) => n.id === notification.id)) {
+        // Even on a duplicate, trust the server's authoritative count if provided
+        if (typeof serverUnreadCount === "number") {
+          return { ...state, unreadCount: serverUnreadCount };
+        }
         return state;
       }
       const updated = [notification, ...state.notifications];
       return {
         notifications: updated,
-        unreadCount: updated.filter((n) => !n.read).length,
+        unreadCount: typeof serverUnreadCount === "number"
+          ? serverUnreadCount
+          : updated.filter((n) => !n.read).length,
       };
     });
   },
