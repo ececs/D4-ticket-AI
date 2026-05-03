@@ -67,6 +67,7 @@ export default function LoginPage() {
         {/* Google OAuth button */}
         <a
           href={`${API_URL}/api/v1/auth/google`}
+          aria-label="Iniciar sesión con Google"
           className="flex items-center justify-center gap-3 w-full py-3 px-6 border border-slate-200 rounded-lg text-slate-700 font-medium hover:bg-slate-50 transition-colors mb-6"
         >
           {/* Google SVG logo */}
@@ -105,6 +106,8 @@ export default function LoginPage() {
             <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
+              id="demo-code"
+              aria-label="Código de acceso demo"
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="Enter Access Code"

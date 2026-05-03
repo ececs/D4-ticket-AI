@@ -283,7 +283,7 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
                 }`}
               >
                 {msg.content || (
-                  <span className="flex items-center gap-1.5 text-slate-400">
+                  <span className="flex items-center gap-1.5 text-slate-400 animate-pulse">
                     <Loader2 className="w-3 h-3 animate-spin" />
                     Thinking...
                   </span>
@@ -296,7 +296,8 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
                   {msg.actions.map((action, i) => (
                     <div
                       key={i}
-                      className="flex items-center gap-1.5 bg-green-50 border border-green-100 rounded-lg px-2.5 py-1.5 text-xs text-green-700"
+                      className="flex items-center gap-1.5 bg-green-50 border border-green-100 rounded-lg px-2.5 py-1.5 text-xs text-green-700 animate-in fade-in slide-in-from-left-2 duration-300"
+                      style={{ animationDelay: `${i * 120}ms`, animationFillMode: "backwards" }}
                     >
                       <Wrench className="w-3 h-3 shrink-0" />
                       {action}
