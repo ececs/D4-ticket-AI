@@ -96,6 +96,7 @@ export function TicketTable({
         {/* Search */}
         <input
           type="text"
+          aria-label="Buscar tickets"
           placeholder="Search tickets..."
           value={filters.search ?? ""}
           onChange={(e) => onFiltersChange({ ...filters, search: e.target.value, page: 1 })}
@@ -104,6 +105,7 @@ export function TicketTable({
 
         {/* Status filter */}
         <select
+          aria-label="Filtrar por estado"
           value={filters.status ?? ""}
           onChange={(e) =>
             onFiltersChange({ ...filters, status: (e.target.value as TicketStatus) || undefined, page: 1 })
@@ -118,6 +120,7 @@ export function TicketTable({
 
         {/* Priority filter */}
         <select
+          aria-label="Filtrar por prioridad"
           value={filters.priority ?? ""}
           onChange={(e) =>
             onFiltersChange({ ...filters, priority: (e.target.value as TicketPriority) || undefined, page: 1 })
@@ -139,8 +142,9 @@ export function TicketTable({
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
               <th className="px-4 py-3 w-10">
-                <button 
+                <button
                   onClick={handleSelectAll}
+                  aria-label={selectedTicketIds.length === tickets.length && tickets.length > 0 ? "Deseleccionar todos" : "Seleccionar todos"}
                   className="text-slate-400 hover:text-blue-600 transition-colors"
                 >
                   {selectedTicketIds.length === tickets.length && tickets.length > 0 
@@ -149,19 +153,19 @@ export function TicketTable({
                   }
                 </button>
               </th>
-              <th className="text-left px-4 py-3">
+              <th className="text-left px-4 py-3" aria-sort={sortBy === "title" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
                 <ColHeader field="title" label="Title" />
               </th>
-              <th className="text-left px-4 py-3">
+              <th className="text-left px-4 py-3" aria-sort={sortBy === "status" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
                 <ColHeader field="status" label="Status" />
               </th>
-              <th className="text-left px-4 py-3">
+              <th className="text-left px-4 py-3" aria-sort={sortBy === "priority" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
                 <ColHeader field="priority" label="Priority" />
               </th>
               <th className="text-left px-4 py-3 hidden md:table-cell">
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Assignee</span>
               </th>
-              <th className="text-left px-4 py-3 hidden lg:table-cell">
+              <th className="text-left px-4 py-3 hidden lg:table-cell" aria-sort={sortBy === "created_at" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
                 <ColHeader field="created_at" label="Created" />
               </th>
               <th className="px-4 py-3" />
@@ -206,9 +210,10 @@ export function TicketTable({
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <button
                       onClick={() => toggleTicket(ticket.id)}
+                      aria-label={selectedTicketIds.includes(ticket.id) ? "Deseleccionar ticket" : "Seleccionar ticket"}
                       className={`${
-                        selectedTicketIds.includes(ticket.id) 
-                          ? "text-blue-600" 
+                        selectedTicketIds.includes(ticket.id)
+                          ? "text-blue-600"
                           : "text-slate-300 hover:text-slate-400"
                       } transition-colors`}
                     >
@@ -275,6 +280,7 @@ export function TicketTable({
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={(e) => { e.stopPropagation(); router.push(`/tickets/${ticket.id}`); }}
+                        aria-label="Abrir ticket"
                         className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
                         title="Open ticket"
                       >
@@ -282,6 +288,7 @@ export function TicketTable({
                       </button>
                       <button
                         onClick={(e) => handleDelete(e, ticket.id)}
+                        aria-label="Eliminar ticket"
                         className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors"
                         title="Delete ticket"
                       >

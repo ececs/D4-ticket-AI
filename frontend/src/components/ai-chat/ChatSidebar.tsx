@@ -247,6 +247,7 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
               created_at: new Date().toISOString(),
             }]);
           }}
+          aria-label="Nueva conversación"
           title="New conversation"
           className="p-1.5 rounded-lg hover:bg-white/20 text-white/70 hover:text-white transition-colors"
         >
@@ -254,6 +255,7 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
         </button>
         <button
           onClick={onClose}
+          aria-label="Cerrar chat"
           className="p-1.5 rounded-lg hover:bg-white/20 text-white/70 hover:text-white transition-colors"
         >
           <X className="w-4 h-4" />
@@ -312,6 +314,7 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
       <div className="px-3 py-3 border-t border-slate-100 rounded-b-2xl">
         <div className="flex gap-2 items-end">
           <textarea
+            aria-label="Mensaje para el asistente"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -323,6 +326,7 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
           <button
             onClick={sendMessage}
             disabled={isStreaming || !input.trim()}
+            aria-label="Enviar mensaje"
             className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-40 transition-colors shrink-0"
             title="Send (Enter)"
           >

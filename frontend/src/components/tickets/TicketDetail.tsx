@@ -324,6 +324,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
               <div className="flex gap-2">
                 <input
                   autoFocus
+                  aria-label="Título del ticket"
                   value={titleDraft}
                   onChange={(e) => setTitleDraft(e.target.value)}
                   onBlur={saveTitle}
@@ -344,6 +345,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
             {/* Status + priority row */}
             <div className="flex items-center gap-3 mt-3">
               <select
+                aria-label="Estado del ticket"
                 value={ticket.status}
                 onChange={(e) => handleStatusChange(e.target.value as TicketStatus)}
                 className="text-sm border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -354,6 +356,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
               </select>
 
               <select
+                aria-label="Prioridad del ticket"
                 value={ticket.priority}
                 onChange={(e) => handlePriorityChange(e.target.value as TicketPriority)}
                 className="text-sm border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -390,6 +393,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
                 <button
                   onClick={() => handleAIDiagnose(true)}
                   disabled={isDiagnosing}
+                  aria-label="Regenerar diagnóstico"
                   className="p-1 rounded hover:bg-blue-100 text-blue-400 hover:text-blue-600 transition-colors"
                   title="Regenerar diagnóstico"
                 >
@@ -425,6 +429,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
                   <button
                     onClick={refreshWebContext}
                     disabled={isRefreshingWeb}
+                    aria-label="Actualizar análisis web"
                     className={`p-1 rounded-full hover:bg-slate-100 transition-colors ${isRefreshingWeb ? "text-blue-500" : "text-slate-400"}`}
                     title="Actualizar análisis de la web"
                   >
@@ -448,6 +453,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
               <div className="flex gap-2">
                 <input
                   autoFocus
+                  aria-label="URL del cliente"
                   value={urlDraft}
                   onChange={(e) => setUrlDraft(e.target.value)}
                   placeholder="https://example.com"
@@ -639,6 +645,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
                           href={att.download_url}
                           target="_blank"
                           rel="noopener noreferrer"
+                          aria-label={`Descargar ${att.filename}`}
                           className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
                           title="Download"
                         >
@@ -647,6 +654,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
                       )}
                       <button
                         onClick={() => deleteAttachment(att.id)}
+                        aria-label={`Eliminar ${att.filename}`}
                         className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors"
                         title="Delete"
                       >
@@ -689,6 +697,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
                   </div>
                   <button
                     onClick={() => deleteComment(c.id)}
+                    aria-label="Eliminar comentario"
                     className="p-1.5 rounded hover:bg-red-50 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all self-start mt-0.5"
                     title="Delete comment"
                   >
@@ -701,6 +710,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
             {/* Add comment form */}
             <form onSubmit={submitComment} className="flex gap-2">
               <textarea
+                aria-label="Escribir un comentario"
                 value={commentText}
                 onChange={(e) => setCommentText(e.target.value)}
                 placeholder="Add a comment..."
@@ -713,6 +723,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
               <button
                 type="submit"
                 disabled={isSubmittingComment || !commentText.trim()}
+                aria-label="Enviar comentario"
                 className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors self-end"
                 title="Send (Ctrl+Enter)"
               >
