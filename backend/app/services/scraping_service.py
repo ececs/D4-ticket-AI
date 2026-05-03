@@ -51,6 +51,7 @@ async def scrape_and_index_url(ticket_id: uuid.UUID, url: str) -> None:
         # 4. Persistence
         # We use the factory to create a dedicated session for this background task
         async with async_session_factory() as db:
+            # 4.1 Save to Knowledge base (RAG)
             chunk = KnowledgeChunk(
                 url=url,
                 chunk_index=0,
@@ -63,7 +64,30 @@ async def scrape_and_index_url(ticket_id: uuid.UUID, url: str) -> None:
                 }
             )
             db.add(chunk)
+            
+            # 4.2 Fetch ticket users to notify via WebSocket
+            from app.models.ticket import Ticket
+            from sqlalchemy import select
+            ticket_res = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+            ticket = ticket_res.scalar_one_or_none()
+            
             await db.commit()
+            
+            # 5. Notify via WebSocket (Live UI update)
+            if ticket:
+                from app.core.websocket_manager import manager
+                notification = {
+                    "type": "web_scrape_completed",
+                    "ticket_id": str(ticket_id),
+                    "message": "Análisis web finalizado"
+                }
+                # Notify both author and assignee
+                users_to_notify = {str(ticket.author_id)}
+                if ticket.assignee_id:
+                    users_to_notify.add(str(ticket.assignee_id))
+                
+                for uid in users_to_notify:
+                    await manager.broadcast_to_user(uid, notification)
             
         logger.info(f"Scraping Service: Successfully indexed web context for ticket {ticket_id}")
         

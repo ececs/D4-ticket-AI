@@ -14,12 +14,12 @@
 
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
+import { X, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 import api from "@/lib/api";
 import { Ticket, TicketPriority, User } from "@/types";
 
@@ -51,6 +51,7 @@ interface TicketFormProps {
 
 export function TicketForm({ open, onClose, onSuccess, ticket, users }: TicketFormProps) {
   const isEdit = !!ticket;
+  const [showPreview, setShowPreview] = useState(false);
 
   const {
     register,
@@ -152,14 +153,42 @@ export function TicketForm({ open, onClose, onSuccess, ticket, users }: TicketFo
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 Client Website (for AI Analysis)
               </label>
-              <input
-                {...register("client_url")}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="https://example.com (landing page context)"
-              />
-              {errors.client_url && (
-                <p className="text-xs text-red-600 mt-1">{errors.client_url.message}</p>
-              )}
+              <div className="space-y-2">
+                <input
+                  {...register("client_url")}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="https://example.com (landing page context)"
+                />
+                {errors.client_url && (
+                  <p className="text-xs text-red-600 mt-1">{errors.client_url.message}</p>
+                )}
+                
+                {/* AI Analysis Preview Collapsible */}
+                {isEdit && ticket?.client_summary && (
+                  <div className="border border-blue-100 bg-blue-50/30 rounded-lg overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setShowPreview(!showPreview)}
+                      className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-medium text-blue-700 hover:bg-blue-50 transition-colors"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles className="w-3 h-3" />
+                        Ver análisis extraído de la web
+                      </span>
+                      {showPreview ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    </button>
+                    
+                    {showPreview && (
+                      <div className="px-3 pb-3 pt-1 text-[11px] text-slate-600 leading-relaxed italic border-t border-blue-100 animate-in slide-in-from-top-2">
+                        {ticket.client_summary}
+                        <div className="mt-2 text-[9px] text-blue-500 font-semibold uppercase tracking-wider">
+                          Fragmento indexado para RAG
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
               <p className="text-[10px] text-slate-400 mt-1">
                 Lanzará un escaneo automático para mejorar el diagnóstico de la IA.
               </p>

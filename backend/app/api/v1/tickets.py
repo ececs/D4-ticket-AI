@@ -35,6 +35,7 @@ from app.schemas.ticket import TicketCreate, TicketListResponse, TicketOut, Tick
 from app.services.cache_service import cache_get, cache_set, cache_invalidate_prefix
 from app.services.embedding_service import generate_embedding, generate_ticket_embedding
 from app.services import ticket_service, notification_service, ai_copilot_service, scraping_service
+from app.models.knowledge_chunk import KnowledgeChunk
 
 CACHE_PREFIX = "tickets:"
 CACHE_TTL = 60  # seconds
@@ -157,6 +158,7 @@ async def get_ticket(ticket_id: uuid.UUID, db: DB, current_user: CurrentUser):
     ticket = await ticket_service.get_ticket(db, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    
     return ticket
 
 
@@ -213,18 +215,61 @@ async def delete_ticket(ticket_id: uuid.UUID, db: DB, current_user: CurrentUser)
     await cache_invalidate_prefix(CACHE_PREFIX)
 
 
-@router.post("/{ticket_id}/ai-diagnose")
-async def ai_diagnose_ticket(
+from fastapi.responses import StreamingResponse
+
+@router.get("/{ticket_id}/diagnosis")
+async def get_diagnosis(
     ticket_id: uuid.UUID,
     db: DB,
     current_user: CurrentUser,
 ):
     """
     Generate an AI diagnosis and suggested solution for a ticket.
-    Uses RAG and historical comments for context.
+    Streams the response token-by-token.
     """
-    diagnosis = await ai_copilot_service.get_ticket_diagnosis(db, ticket_id)
-    return {"diagnosis": diagnosis}
+    return StreamingResponse(
+        ai_copilot_service.stream_ticket_diagnosis(db, ticket_id),
+        media_type="text/event-stream"
+    )
+
+
+@router.get("/{ticket_id}/web-context")
+async def get_ticket_web_context(
+    ticket_id: uuid.UUID,
+    db: DB,
+    current_user: CurrentUser,
+):
+    """
+    Fetches the latest AI-extracted web context for this ticket.
+    """
+    # Use a more robust way to query JSON content in SQLAlchemy
+    result = await db.execute(
+        select(KnowledgeChunk)
+        .where(func.json_extract_path_text(KnowledgeChunk.chunk_metadata, "ticket_id") == str(ticket_id))
+        .order_by(KnowledgeChunk.created_at.desc())
+        .limit(1)
+    )
+    chunk = result.scalar_one_or_none()
+    return {"content": chunk.content if chunk else None}
+
+
+@router.post("/{ticket_id}/web-scrape-refresh")
+async def refresh_ticket_web_scrape(
+    ticket_id: uuid.UUID,
+    db: DB,
+    current_user: CurrentUser,
+):
+    """
+    Manually triggers a new web scrape for the ticket's URL.
+    """
+    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = result.scalar_one_or_none()
+    if not ticket or not ticket.client_url:
+        raise HTTPException(status_code=400, detail="Ticket has no URL to scrape.")
+    
+    # Trigger background task
+    asyncio.create_task(scraping_service.scrape_and_index_url(ticket_id, ticket.client_url))
+    return {"status": "scraping_started"}
 
 
 # ─── Private helpers ──────────────────────────────────────────────────────────

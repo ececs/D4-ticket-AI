@@ -169,14 +169,16 @@ app = FastAPI(
 )
 
 # CORS: allow the frontend origin to make cross-origin requests.
-# We combine the configured CORS_ORIGINS with FRONTEND_URL to ensure consistency.
-allowed_origins = list(set(settings.CORS_ORIGINS + [settings.FRONTEND_URL]))
+allowed_origins = list(set(
+    settings.CORS_ORIGINS + 
+    [settings.FRONTEND_URL, "http://localhost:3000", "http://127.0.0.1:3000"]
+))
 print(f"🔓 Allowed Origins: {allowed_origins}")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,  # Required for cookie-based auth
+    allow_origins=["*"] if os.getenv("RAILWAY_ENVIRONMENT_NAME") is None else allowed_origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

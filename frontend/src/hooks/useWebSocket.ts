@@ -49,12 +49,21 @@ export function useWebSocket(token: string | null) {
       socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data) as Record<string, unknown>;
-          // Ignore keepalive pings and any message without the required fields
-          if (data.type === "ping" || !data.id || !data.ticket_id) return;
+          // Ignore keepalive pings
+          if (data.type === "ping") return;
+
+          // Special case: web_scrape_completed is a virtual event (not in DB)
+          if (data.type === "web_scrape_completed" && data.ticket_id) {
+            triggerRefresh(String(data.ticket_id));
+            return;
+          }
+
+          // Persistent notifications must have an id and ticket_id
+          if (!data.id || !data.ticket_id) return;
+          
           addNotification(data as unknown as Notification);
           
           // Trigger a refresh of any components listening to the refresh signal
-          // Pass the specific ticket ID for targeted partial updates
           triggerRefresh(String(data.ticket_id));
         } catch {
           // Ignore malformed messages

@@ -17,7 +17,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, Paperclip, Trash2, Download, MessageSquare, Send, Loader2, Sparkles, RefreshCw, Globe, ExternalLink, Info,
+  ArrowLeft, Clock, Paperclip, Trash2, Download, MessageSquare, Send, Loader2, Sparkles, RefreshCw, Globe, ExternalLink, Info, ChevronDown, ChevronUp,
 } from "lucide-react";
 import api from "@/lib/api";
 import {
@@ -26,6 +26,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { STATUS_LABELS, PRIORITY_CONFIG, timeAgo, formatFileSize } from "@/lib/utils";
 import { useUsers } from "@/hooks/useUsers";
+import useNotificationStore from "@/stores/notificationStore";
 
 const STATUSES: TicketStatus[] = ["open", "in_progress", "in_review", "closed"];
 const PRIORITIES: TicketPriority[] = ["low", "medium", "high", "critical"];
@@ -38,6 +39,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
   const router = useRouter();
   const { users } = useUsers();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { refreshSignal, lastTicketId } = useNotificationStore();
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -67,41 +69,86 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const [aiDiagnosis, setAiDiagnosis] = useState<string | null>(null);
   const [showDiagnosis, setShowDiagnosis] = useState(false);
+  const [showExtracted, setShowExtracted] = useState(false);
+  const [extractedContent, setExtractedContent] = useState<string | null>(null);
+  const [isRefreshingWeb, setIsRefreshingWeb] = useState(false);
+
+
+  const refreshWebContext = async () => {
+    if (!ticket?.client_url) return;
+    
+    setIsRefreshingWeb(true);
+    try {
+      await api.post(`/tickets/${ticketId}/web-scrape-refresh`);
+      // We don't call fetchData here because the WebSocket will trigger it
+      // once the background scraping task is done.
+    } catch (err) {
+      console.error("Failed to trigger scrape refresh", err);
+      setIsRefreshingWeb(false);
+    }
+  };
 
   // ── Fetch ticket, comments, attachments ──────────────────────────────────
 
   useEffect(() => {
-    setIsLoading(true);
-    Promise.all([
-      api.get<Ticket>(`/tickets/${ticketId}`),
-      api.get<Comment[]>(`/tickets/${ticketId}/comments`),
-      api.get<Attachment[]>(`/tickets/${ticketId}/attachments`).catch(() => ({ data: [] as Attachment[] })),
-    ])
-      .then(([ticketRes, commentsRes, attachmentsRes]) => {
-        setTicket(ticketRes.data);
-        setComments(commentsRes.data);
-        setAttachments(attachmentsRes.data);
-      })
-      .catch((err) => {
-        const status = err?.response?.status;
-        const detail = err?.response?.data?.detail;
-        setError(
-          status === 404
-            ? "Ticket not found"
-            : detail
-            ? `Error: ${detail}`
-            : `Failed to load ticket (${status ?? "network error"})`
-        );
-      })
-      .finally(() => setIsLoading(false));
+    fetchData();
   }, [ticketId]);
+
+  // Real-time refresh listener (WebSockets)
+  useEffect(() => {
+    if (refreshSignal > 0 && lastTicketId === ticketId) {
+      console.log("Real-time refresh triggered for ticket:", ticketId);
+      fetchData();
+      setIsRefreshingWeb(false); // Stop the loading animation on the refresh button
+    }
+  }, [refreshSignal, lastTicketId, ticketId]);
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    try {
+      const [ticketRes, commentsRes, attachmentsRes, webCtxRes] = await Promise.all([
+        api.get<Ticket>(`/tickets/${ticketId}`),
+        api.get<Comment[]>(`/tickets/${ticketId}/comments`),
+        api.get<Attachment[]>(`/tickets/${ticketId}/attachments`).catch(() => ({ data: [] as Attachment[] })),
+        api.get<{ content: string | null }>(`/tickets/${ticketId}/web-context`).catch(() => ({ data: { content: null } })),
+      ]);
+      setTicket(ticketRes.data);
+      setComments(commentsRes.data);
+      setAttachments(attachmentsRes.data);
+      setExtractedContent(webCtxRes.data.content);
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      setError(
+        status === 404
+          ? "Ticket not found"
+          : detail
+          ? `Error: ${detail}`
+          : `Failed to load ticket (${status ?? "network error"})`
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // ── Ticket field updates ─────────────────────────────────────────────────
 
   const patchTicket = async (data: Partial<Ticket>) => {
     if (!ticket) return;
-    const { data: updated } = await api.patch<Ticket>(`/tickets/${ticketId}`, data);
-    setTicket(updated);
+    
+    // Optimistic Update: update UI immediately
+    const previousTicket = { ...ticket };
+    setTicket({ ...ticket, ...data } as Ticket);
+    
+    try {
+      const { data: updated } = await api.patch<Ticket>(`/tickets/${ticketId}`, data);
+      setTicket(updated);
+    } catch (error) {
+      console.error("Failed to patch ticket", error);
+      // Revert on error
+      setTicket(previousTicket);
+      alert("Error al guardar los cambios. Inténtalo de nuevo.");
+    }
   };
 
   const handleStatusChange = (status: TicketStatus) => patchTicket({ status });
@@ -197,15 +244,36 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
     }
 
     setIsDiagnosing(true);
-    setAiDiagnosis(null);
+    setAiDiagnosis(""); // Initialize as empty string for streaming
     setShowDiagnosis(true);
+    
     try {
-      const { data } = await api.post<{ diagnosis: string }>(`/tickets/${ticketId}/ai-diagnose`);
-      setAiDiagnosis(data.diagnosis);
+      const tokenMatch = document.cookie.match(/(?:^|;\s*)access_token=([^;]+)/);
+      const token = tokenMatch ? decodeURIComponent(tokenMatch[1]) : null;
+      
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/tickets/${ticketId}/diagnosis`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        }
+      });
+
+      if (!response.ok) throw new Error("Failed to connect to AI service");
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      
+      if (!reader) throw new Error("ReadableStream not supported");
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        setAiDiagnosis((prev) => (prev || "") + chunk);
+      }
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { detail?: string } } };
-      alert(axiosErr.response?.data?.detail ?? "Error al generar diagnóstico");
-      setShowDiagnosis(false);
+      console.error("AI Diagnosis failed", err);
+      setAiDiagnosis("*(Error: No se pudo conectar con el servicio de IA para el diagnóstico en tiempo real)*");
     } finally {
       setIsDiagnosing(false);
     }
@@ -347,16 +415,28 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
               <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
                 <Globe className="w-4 h-4 text-blue-500" /> Web del Cliente
               </h2>
-              {ticket.client_url && !editingUrl && (
-                <a 
-                  href={ticket.client_url} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1"
-                >
-                  Visitar <ExternalLink className="w-3 h-3" />
-                </a>
-              )}
+              <div className="flex items-center gap-3">
+                {ticket.client_url && (
+                  <button
+                    onClick={refreshWebContext}
+                    disabled={isRefreshingWeb}
+                    className={`p-1 rounded-full hover:bg-slate-100 transition-colors ${isRefreshingWeb ? "text-blue-500" : "text-slate-400"}`}
+                    title="Actualizar análisis de la web"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingWeb ? "animate-spin" : ""}`} />
+                  </button>
+                )}
+                {ticket.client_url && !editingUrl && (
+                  <a 
+                    href={ticket.client_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1"
+                  >
+                    Visitar <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </div>
             </div>
             
             {editingUrl ? (
@@ -398,6 +478,39 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
               <p className="text-[10px] text-slate-400 mt-2">
                 La IA usa esta web para enriquecer el diagnóstico técnico.
               </p>
+            )}
+
+            {/* AI Extracted Context Collapsible */}
+            {ticket.client_url && extractedContent && (
+              <div className="mt-3 border border-blue-100 bg-blue-50/30 rounded-lg overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowExtracted(!showExtracted)}
+                  className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-medium text-blue-700 hover:bg-blue-50 transition-colors"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3" />
+                    Análisis automático de {new URL(ticket.client_url).hostname}
+                  </span>
+                  {showExtracted ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                </button>
+                
+                {showExtracted && (
+                  <div className="px-3 pb-3 pt-1 text-[11px] text-slate-600 leading-relaxed italic border-t border-blue-100 animate-in slide-in-from-top-2">
+                    {extractedContent}
+                    <div className="mt-2 text-[9px] text-blue-500 font-semibold uppercase tracking-wider">
+                      Contexto extraído por la IA
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {ticket.client_url && !extractedContent && (
+              <div className="mt-2 text-[9px] text-slate-400 italic flex items-center gap-1 px-1">
+                <Clock className="w-2.5 h-2.5" /> 
+                Análisis automático pendiente o en curso...
+              </div>
             )}
           </div>
 
@@ -441,7 +554,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
                 {ticket.client_summary ? (
                   ticket.client_summary
                 ) : (
-                  <span className="text-slate-400 italic">Sin resumen. Haz clic para añadir contexto del cliente.</span>
+                  <span className="text-slate-400 italic">Sin resumen manual. Haz clic para añadir notas sobre el cliente.</span>
                 )}
               </p>
             )}
