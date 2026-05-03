@@ -17,8 +17,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Ticket, TicketFilters, TicketPriority, TicketStatus } from "@/types";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { STATUS_LABELS, PRIORITY_CONFIG, timeAgo } from "@/lib/utils";
-import { ChevronUp, ChevronDown, ChevronsUpDown, Trash2, ExternalLink, CheckSquare, Square } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronsUpDown, Trash2, ExternalLink, CheckSquare, Square, ClipboardList, SearchX } from "lucide-react";
 import { useSelectionStore } from "@/stores/useSelectionStore";
 
 const STATUSES: TicketStatus[] = ["open", "in_progress", "in_review", "closed"];
@@ -54,6 +55,7 @@ export function TicketTable({
   const router = useRouter();
   const [sortBy, setSortBy] = useState<SortField | undefined>(undefined);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const handleSort = (field: SortField) => {
     const newDir = sortBy === field && sortDir === "desc" ? "asc" : "desc";
@@ -72,11 +74,16 @@ export function TicketTable({
     }
   };
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
+  const handleDelete = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (confirm("Delete this ticket? This action cannot be undone.")) {
-      await onDeleteTicket(id);
+    setPendingDeleteId(id);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (pendingDeleteId) {
+      await onDeleteTicket(pendingDeleteId);
     }
+    setPendingDeleteId(null);
   };
 
   const ColHeader = ({ field, label }: { field: SortField; label: string }) => (
@@ -183,16 +190,36 @@ export function TicketTable({
 
             {!isLoading && tickets.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-slate-400">
-                  No tickets found.{" "}
-                  {(filters.search || filters.status || filters.priority) && (
-                    <button
-                      onClick={() => onFiltersChange({})}
-                      className="text-blue-600 hover:underline"
-                    >
-                      Clear filters
-                    </button>
-                  )}
+                <td colSpan={7} className="px-4 py-14 text-center">
+                  <div className="flex flex-col items-center gap-3">
+                    {(filters.search || filters.status || filters.priority) ? (
+                      <>
+                        <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center">
+                          <SearchX className="w-6 h-6 text-slate-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-slate-600">No tickets match your filters</p>
+                          <p className="text-xs text-slate-400 mt-0.5">Try adjusting your search or clearing the filters</p>
+                        </div>
+                        <button
+                          onClick={() => onFiltersChange({})}
+                          className="text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                        >
+                          Clear all filters
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center">
+                          <ClipboardList className="w-6 h-6 text-blue-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-slate-600">All clear! No tickets yet</p>
+                          <p className="text-xs text-slate-400 mt-0.5">Create your first ticket to get started</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </td>
               </tr>
             )}
@@ -324,6 +351,15 @@ export function TicketTable({
           </button>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!pendingDeleteId}
+        title="Delete ticket"
+        description="This action cannot be undone. The ticket and all its comments and attachments will be permanently removed."
+        confirmLabel="Delete ticket"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setPendingDeleteId(null)}
+      />
     </div>
   );
 }

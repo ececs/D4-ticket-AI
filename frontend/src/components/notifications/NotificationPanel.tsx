@@ -61,9 +61,14 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
       {/* List */}
       <div className="max-h-80 overflow-y-auto">
         {notifications.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 text-slate-400 gap-2">
-            <Bell className="w-8 h-8 opacity-40" />
-            <p className="text-sm">No notifications yet</p>
+          <div className="flex flex-col items-center justify-center py-10 gap-3">
+            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center">
+              <Bell className="w-6 h-6 text-slate-300" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-medium text-slate-500">You&apos;re all caught up!</p>
+              <p className="text-xs text-slate-400 mt-0.5">No new notifications right now</p>
+            </div>
           </div>
         ) : (
           notifications.map((n) => (
