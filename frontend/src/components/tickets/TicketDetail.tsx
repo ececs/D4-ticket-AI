@@ -17,7 +17,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, Paperclip, Trash2, Download, MessageSquare, Send, Loader2, Sparkles,
+  ArrowLeft, Paperclip, Trash2, Download, MessageSquare, Send, Loader2, Sparkles, RefreshCw,
 } from "lucide-react";
 import api from "@/lib/api";
 import {
@@ -62,6 +62,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
   // AI Diagnosis state
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const [aiDiagnosis, setAiDiagnosis] = useState<string | null>(null);
+  const [showDiagnosis, setShowDiagnosis] = useState(false);
 
   // ── Fetch ticket, comments, attachments ──────────────────────────────────
 
@@ -169,16 +170,24 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
   };
 
   // ── AI Diagnosis ─────────────────────────────────────────────────────────
+  
+  const handleAIDiagnose = async (force = false) => {
+    // If we already have a diagnosis and we're not forcing a refresh, just toggle visibility
+    if (aiDiagnosis && !force) {
+      setShowDiagnosis(!showDiagnosis);
+      return;
+    }
 
-  const handleAIDiagnose = async () => {
     setIsDiagnosing(true);
     setAiDiagnosis(null);
+    setShowDiagnosis(true);
     try {
       const { data } = await api.post<{ diagnosis: string }>(`/tickets/${ticketId}/ai-diagnose`);
       setAiDiagnosis(data.diagnosis);
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { detail?: string } } };
       alert(axiosErr.response?.data?.detail ?? "Error al generar diagnóstico");
+      setShowDiagnosis(false);
     } finally {
       setIsDiagnosing(false);
     }
@@ -284,9 +293,17 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
           </div>
 
           {/* AI Diagnosis Results */}
-          {aiDiagnosis && (
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-4 shadow-sm relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-2">
+          {aiDiagnosis && showDiagnosis && (
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-4 shadow-sm relative overflow-hidden group animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="absolute top-0 right-0 p-2 flex gap-2">
+                <button
+                  onClick={() => handleAIDiagnose(true)}
+                  disabled={isDiagnosing}
+                  className="p-1 rounded hover:bg-blue-100 text-blue-400 hover:text-blue-600 transition-colors"
+                  title="Regenerar diagnóstico"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isDiagnosing ? "animate-spin" : ""}`} />
+                </button>
                 <Sparkles className="w-4 h-4 text-blue-400 opacity-20 group-hover:opacity-100 transition-opacity" />
               </div>
               <h3 className="text-xs font-bold text-blue-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -297,7 +314,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
               </p>
               <div className="mt-3 flex justify-end">
                 <button 
-                  onClick={() => setAiDiagnosis(null)}
+                  onClick={() => setShowDiagnosis(false)}
                   className="text-[10px] text-blue-400 hover:text-blue-600 font-medium"
                 >
                   Cerrar análisis
