@@ -90,6 +90,14 @@ npm run dev
 
 ---
 
+### 🧠 Transparencia IA
+En el desarrollo de este proyecto se han utilizado herramientas de IA generativa siguiendo las mejores prácticas de la industria:
+*   **Gemini 2.0 Flash / GPT-4o**: Utilizados para el diseño de la arquitectura del Agente (LangGraph), generación de esquemas Pydantic y revisión de seguridad de endpoints.
+*   **Antigravity / GPT**: Utilizados para el scaffolding inicial del frontend y la automatización del proceso de despliegue (CI/CD).
+*   **Propósito**: Todas las decisiones técnicas han sido supervisadas y validadas por el autor para garantizar la robustez y mantenibilidad del sistema.
+
+---
+
 ### 📜 Licencia
 Desarrollado como reto técnico para **Orbidi** y proyecto final de **DAW**.
 Todos los derechos reservados.

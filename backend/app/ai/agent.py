@@ -8,7 +8,6 @@ Uses langgraph.prebuilt.create_react_agent — a pre-built ReAct agent that:
 
 Provider abstraction:
   The LLM is constructed by get_llm() based on AI_PROVIDER / AI_MODEL env vars.
-  Switching from Gemini to Claude requires only changing two env vars — no code change.
 
 System prompt:
   Tells the agent it is a ticket management assistant, what tools it has, and to
