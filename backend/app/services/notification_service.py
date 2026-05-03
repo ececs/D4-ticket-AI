@@ -20,6 +20,7 @@ PostgreSQL NOTIFY channel: "notifications"
 """
 
 import json
+import logging
 from typing import List, Optional, Any, Dict
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +32,8 @@ from app.models.user import User
 from app.schemas.notification import NotificationOut
 from app.services import pubsub_service
 from app.schemas.websocket import WSMessage, WSMessageType
+
+logger = logging.getLogger(__name__)
 
 
 async def _pg_notify(db: AsyncSession, user_id: str, payload: dict) -> None:

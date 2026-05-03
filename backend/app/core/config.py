@@ -30,6 +30,22 @@ class Settings(BaseSettings):
     # --- Authentication ---
     # SECRET_KEY: used to sign/verify JWT tokens. Must be ≥32 random chars in production.
     SECRET_KEY: str = "change-me-in-production"
+
+    @field_validator("SECRET_KEY")
+    @classmethod
+    def _require_strong_secret(cls, v: str) -> str:
+        import os
+        in_production = bool(
+            os.getenv("RAILWAY_ENVIRONMENT_NAME") or
+            os.getenv("ENV", "").lower() == "production"
+        )
+        if in_production and v == "change-me-in-production":
+            raise ValueError(
+                "SECRET_KEY must be overridden in production. "
+                "Set the SECRET_KEY environment variable."
+            )
+        return v
+
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 days — long session for developer UX
 

@@ -42,6 +42,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
   const { users } = useUsers();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { refreshSignal, lastTicketId } = useNotificationStore();
+  const { toast } = useToast();
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -137,19 +138,19 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
 
   const patchTicket = async (data: Partial<Ticket>) => {
     if (!ticket) return;
-    
+
     // Optimistic Update: update UI immediately
     const previousTicket = { ...ticket };
     setTicket({ ...ticket, ...data } as Ticket);
-    
+
     try {
       const { data: updated } = await api.patch<Ticket>(`/tickets/${ticketId}`, data);
       setTicket(updated);
+      toast({ title: "Cambios guardados", description: "El ticket se ha actualizado correctamente." });
     } catch (error) {
       console.error("Failed to patch ticket", error);
-      // Revert on error
       setTicket(previousTicket);
-      alert("Error al guardar los cambios. Inténtalo de nuevo.");
+      toast({ title: "Error al guardar", description: "No se pudieron guardar los cambios. Inténtalo de nuevo.", variant: "destructive" });
     }
   };
 
@@ -197,6 +198,9 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
       );
       setComments((prev) => [...prev, newComment]);
       setCommentText("");
+      toast({ title: "Comentario enviado" });
+    } catch {
+      toast({ title: "Error al enviar comentario", variant: "destructive" });
     } finally {
       setIsSubmittingComment(false);
     }

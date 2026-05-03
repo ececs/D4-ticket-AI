@@ -13,8 +13,11 @@ sticky sessions), we store the OAuth state in a short-lived signed HttpOnly cook
 The state is validated in the callback before the code exchange.
 """
 
+import logging
 import secrets
 from urllib.parse import urlencode
+
+logger = logging.getLogger(__name__)
 
 import httpx
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
