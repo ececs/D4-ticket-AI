@@ -81,17 +81,17 @@ async def create_ticket(
     db.add(ticket)
     await db.flush() # Get the ID for notifications
     
-    # 2. Side effects
-    # We fetch the author object to use their name in the notification
+    # 2. Fetch author for notification
     author_result = await db.execute(select(User).where(User.id == author_id))
     author = author_result.scalar_one()
-    
-    await notification_service.notify_ticket_created(db, ticket=ticket, actor=author)
-    
+
     # 3. Finalize
     await db.commit()
     
-    # 4. Background tasks
+    # 4. Handle side effects (Notifications) after commit
+    await notification_service.notify_ticket_created(db, ticket=ticket, actor=author)
+    
+    # 5. Background tasks
     asyncio.create_task(generate_ticket_embedding_task(ticket.id, title, description))
     if client_url:
         asyncio.create_task(scraping_service.scrape_and_index_url(ticket.id, client_url))
@@ -155,17 +155,18 @@ async def change_status(
     old_status = ticket.status
     ticket.status = new_status
     
-    # 3. Handle side effects (Notifications)
+    # 4. Persist changes
+    await db.commit()
+    
+    # 5. Handle side effects (Notifications) after commit
+    # This avoids race conditions where the frontend refreshes before the commit is finished
     if new_status != old_status:
         await notification_service.notify_status_changed(
             db, ticket=ticket, actor=actor, new_status=new_status.value
         )
         await notification_service.notify_ticket_updated(db, ticket=ticket, actor=actor)
 
-    # 4. Persist changes
-    await db.commit()
-    
-    # 5. Return a clean, decoupled Pydantic object
+    # 6. Return a clean, decoupled Pydantic object
     return await get_ticket(db, ticket_id)
 
 
@@ -196,8 +197,11 @@ async def reassign(
 
     # 2. Update field
     ticket.assignee_id = assignee_id
-    
-    # 3. Notify if a new assignee is provided
+
+    # 4. Persist
+    await db.commit()
+
+    # 5. Notify after commit if a new assignee is provided
     if assignee_id:
         assignee_result = await db.execute(select(User).where(User.id == assignee_id))
         new_assignee = assignee_result.scalar_one_or_none()
@@ -206,10 +210,7 @@ async def reassign(
                 db, ticket=ticket, assignee=new_assignee, actor=actor
             )
 
-    # 4. Persist
-    await db.commit()
-    
-    # 5. Return decoupled schema
+    # 6. Return decoupled schema
     return await get_ticket(db, ticket_id)
 
 
@@ -238,7 +239,10 @@ async def update_ticket(
     
     await db.flush()
 
-    # --- Side effects (Notifications) ---
+    # 5. Persist
+    await db.commit()
+
+    # 6. Side effects (Notifications) after commit
     if "status" in update_data and update_data["status"] != old_status:
         await notification_service.notify_status_changed(
             db, ticket=ticket, actor=actor, new_status=update_data["status"]
@@ -255,8 +259,6 @@ async def update_ticket(
         
     # Generic update notification to trigger UI refreshes
     await notification_service.notify_ticket_updated(db, ticket=ticket, actor=actor)
-
-    await db.commit()
 
     # --- Side effects (Background Tasks) ---
     if "title" in update_data or "description" in update_data:

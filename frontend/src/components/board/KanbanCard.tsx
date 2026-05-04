@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Ticket } from "@/types";
 import { Badge } from "@/components/ui/badge";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import { PRIORITY_CONFIG } from "@/lib/utils";
 
 interface KanbanCardProps {
@@ -82,18 +83,11 @@ export function KanbanCard({ ticket, isUpdating = false }: KanbanCardProps) {
       {/* Assignee */}
       {ticket.assignee && (
         <div className="flex items-center gap-1.5">
-          {ticket.assignee.avatar_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={ticket.assignee.avatar_url}
-              alt={ticket.assignee.name}
-              className="w-5 h-5 rounded-full"
-            />
-          ) : (
-            <span className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-xs font-medium text-slate-600">
-              {ticket.assignee.name.charAt(0).toUpperCase()}
-            </span>
-          )}
+          <UserAvatar 
+            src={ticket.assignee.avatar_url} 
+            name={ticket.assignee.name} 
+            size="xs" 
+          />
           <span className="text-xs text-slate-500 truncate">{ticket.assignee.name}</span>
         </div>
       )}

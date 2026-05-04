@@ -24,6 +24,7 @@ import useAuthStore from "@/stores/authStore";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { useNotifications } from "@/hooks/useNotifications";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import { ChatSidebar } from "@/components/ai-chat/ChatSidebar";
 import api from "@/lib/api";
 
@@ -93,18 +94,11 @@ export function DashboardHeader({ token }: DashboardHeaderProps) {
               className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
               aria-label="User menu"
             >
-              {user?.avatar_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={user.avatar_url}
-                  alt={user.name}
-                  className="w-7 h-7 rounded-full ring-2 ring-slate-200"
-                />
-              ) : (
-                <span className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-semibold">
-                  {user?.name?.charAt(0).toUpperCase() ?? <User className="w-4 h-4" />}
-                </span>
-              )}
+              <UserAvatar 
+                src={user?.avatar_url} 
+                name={user?.name || "User"} 
+                size="sm" 
+              />
               <span className="text-sm text-slate-700 hidden sm:block max-w-[140px] truncate">
                 {user?.name}
               </span>

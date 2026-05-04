@@ -17,6 +17,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Ticket, TicketFilters, TicketPriority, TicketStatus } from "@/types";
 import { Badge } from "@/components/ui/badge";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { STATUS_LABELS, PRIORITY_CONFIG, timeAgo } from "@/lib/utils";
 import { ChevronUp, ChevronDown, ChevronsUpDown, Trash2, ExternalLink, CheckSquare, Square, ClipboardList, SearchX } from "lucide-react";
@@ -277,20 +278,13 @@ export function TicketTable({
 
                   {/* Assignee */}
                   <td className="px-4 py-3 hidden md:table-cell">
-                    {ticket.assignee ? (
+                     {ticket.assignee ? (
                       <div className="flex items-center gap-2">
-                        {ticket.assignee.avatar_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={ticket.assignee.avatar_url}
-                            alt={ticket.assignee.name}
-                            className="w-5 h-5 rounded-full"
-                          />
-                        ) : (
-                          <span className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-xs font-medium text-slate-600">
-                            {ticket.assignee.name.charAt(0).toUpperCase()}
-                          </span>
-                        )}
+                        <UserAvatar 
+                          src={ticket.assignee.avatar_url} 
+                          name={ticket.assignee.name} 
+                          size="xs" 
+                        />
                         <span className="text-slate-600 truncate max-w-[120px]">{ticket.assignee.name}</span>
                       </div>
                     ) : (

@@ -28,6 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { STATUS_LABELS, PRIORITY_CONFIG, timeAgo, formatFileSize } from "@/lib/utils";
 import { useUsers } from "@/hooks/useUsers";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import useNotificationStore from "@/stores/notificationStore";
 
 const STATUSES: TicketStatus[] = ["open", "in_progress", "in_review", "closed"];
@@ -680,14 +681,12 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
               )}
               {comments.map((c) => (
                 <div key={c.id} className="flex gap-3 group">
-                  {c.author?.avatar_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={c.author.avatar_url} alt={c.author.name} className="w-7 h-7 rounded-full shrink-0 mt-0.5" />
-                  ) : (
-                    <span className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-xs font-medium text-slate-600 shrink-0 mt-0.5">
-                      {c.author?.name.charAt(0).toUpperCase() ?? "?"}
-                    </span>
-                  )}
+                  <UserAvatar
+                    src={c.author?.avatar_url}
+                    name={c.author?.name ?? "?"}
+                    size="sm"
+                    className="mt-0.5"
+                  />
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs font-semibold text-slate-700">{c.author?.name ?? "Unknown"}</span>
@@ -751,14 +750,11 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
 
             {ticket.assignee && (
               <div className="flex items-center gap-2 mt-3">
-                {ticket.assignee.avatar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={ticket.assignee.avatar_url} alt={ticket.assignee.name} className="w-7 h-7 rounded-full" />
-                ) : (
-                  <span className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-xs font-medium text-slate-600">
-                    {ticket.assignee.name.charAt(0).toUpperCase()}
-                  </span>
-                )}
+                <UserAvatar 
+                  src={ticket.assignee.avatar_url} 
+                  name={ticket.assignee.name} 
+                  size="sm" 
+                />
                 <div>
                   <p className="text-sm font-medium text-slate-700">{ticket.assignee.name}</p>
                   <p className="text-xs text-slate-400">{ticket.assignee.email}</p>
