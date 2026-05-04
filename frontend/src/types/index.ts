@@ -115,6 +115,18 @@ export interface ChatMessage {
   created_at: string;
 }
 
+// ─── Ticket History ──────────────────────────────────────────────────────────
+
+export interface TicketHistory {
+  id: string;
+  ticket_id: string | null;
+  actor: User | null;
+  field: string;
+  old_value: string | null;
+  new_value: string | null;
+  created_at: string;
+}
+
 // ─── Filters ─────────────────────────────────────────────────────────────────
 
 export interface TicketFilters {
