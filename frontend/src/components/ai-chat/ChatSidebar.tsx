@@ -221,11 +221,13 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
               );
             } else if (event.type === "confirmation_required" && event.ticket_id) {
               // Queue delete confirmations so multiple selected tickets are confirmed one by one.
+              const ticketId = event.ticket_id;
+              const ticketTitle = event.ticket_title ?? "this ticket";
               setDeleteQueue((prev) => [
                 ...prev,
                 {
-                  ticket_id: event.ticket_id,
-                  ticket_title: event.ticket_title ?? "this ticket",
+                  ticket_id: ticketId,
+                  ticket_title: ticketTitle,
                 },
               ]);
             } else if (event.type === "done") {
@@ -317,12 +319,14 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
           <button
             onClick={resetChat}
             title="New Chat"
+            aria-label="Nueva conversación"
             className="p-1.5 text-blue-100 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
           >
             <RotateCcw className="w-4 h-4" />
           </button>
           <button
             onClick={onClose}
+            aria-label="Cerrar chat"
             className="p-1.5 text-blue-100 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
           >
             <X className="w-5 h-5" />

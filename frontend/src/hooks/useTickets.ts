@@ -151,7 +151,7 @@ export function useTickets(filters: TicketFilters = {}): UseTicketsReturn {
 
     try {
       await api.delete(`/tickets/${ticketId}`);
-    } catch {
+    } catch (err) {
       setTickets(snapshot);
       setTotal((n) => n + 1);
       toast({
