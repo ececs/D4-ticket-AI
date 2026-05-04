@@ -199,6 +199,32 @@ async def notify_comment_added(
         )
 
 
+async def notify_priority_changed(
+    db: AsyncSession,
+    ticket: Ticket,
+    actor: User,
+    new_priority: str,
+) -> None:
+    """Notify the ticket author and assignee when the ticket priority changes."""
+    priority_str = new_priority.value if hasattr(new_priority, "value") else new_priority
+    priority_label = priority_str.replace("_", " ").title()
+    message = f'{actor.name} changed priority of "{ticket.title}" to {priority_label}'
+
+    users_to_notify: set[uuid.UUID] = set()
+    users_to_notify.add(ticket.author_id)
+    if ticket.assignee_id:
+        users_to_notify.add(ticket.assignee_id)
+
+    for user_id in users_to_notify:
+        await _create_notification(
+            db,
+            user_id=user_id,
+            notification_type=NotificationType.ticket_updated,
+            ticket_id=ticket.id,
+            message=message,
+        )
+
+
 async def notify_status_changed(
     db: AsyncSession,
     ticket: Ticket,
