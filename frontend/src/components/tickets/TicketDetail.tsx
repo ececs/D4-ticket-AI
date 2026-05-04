@@ -26,7 +26,7 @@ import {
 import { getAuthToken } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { STATUS_LABELS, PRIORITY_CONFIG, timeAgo, formatFileSize } from "@/lib/utils";
+import { STATUS_LABELS, PRIORITY_CONFIG, timeAgo, formatDateTime, formatFileSize } from "@/lib/utils";
 import { useUsers } from "@/hooks/useUsers";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import useNotificationStore from "@/stores/notificationStore";
@@ -778,7 +778,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
                           <span className="font-medium">{entry.actor?.name ?? "Someone"}</span>{" "}
                           {HISTORY_LABELS[entry.field]?.(entry.old_value, entry.new_value) ?? `updated ${entry.field}`}
                         </p>
-                        <p className="text-xs text-slate-400 mt-0.5">{timeAgo(entry.created_at)}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">{formatDateTime(entry.created_at)}</p>
                       </li>
                     ))}
                   </ol>

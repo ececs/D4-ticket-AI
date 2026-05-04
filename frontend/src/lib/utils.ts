@@ -44,6 +44,20 @@ export function timeAgo(isoString: string): string {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
+/**
+ * Format an ISO timestamp to a readable date + time string.
+ * Example: "4 May 2026, 14:32"
+ */
+export function formatDateTime(isoString: string): string {
+  return new Date(isoString).toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 /** Map ticket status to a display label. */
 export const STATUS_LABELS: Record<string, string> = {
   open: "Open",
