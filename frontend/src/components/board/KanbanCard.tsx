@@ -14,7 +14,6 @@ import { CSS } from "@dnd-kit/utilities";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Ticket } from "@/types";
-import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { PRIORITY_CONFIG } from "@/lib/utils";
 

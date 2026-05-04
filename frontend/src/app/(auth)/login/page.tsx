@@ -45,7 +45,7 @@ export default function LoginPage() {
       } else {
         setError(data.detail || "Código de acceso inválido.");
       }
-    } catch (err) {
+    } catch {
       setError("Error al conectar con el servidor.");
     } finally {
       setLoading(false);

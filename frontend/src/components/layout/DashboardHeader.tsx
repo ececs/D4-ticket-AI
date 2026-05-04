@@ -19,7 +19,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { LogOut, User, Bot } from "lucide-react";
+import { LogOut, Bot } from "lucide-react";
 import useAuthStore from "@/stores/authStore";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
@@ -48,7 +48,7 @@ export function DashboardHeader({ token }: DashboardHeaderProps) {
   const handleLogout = async () => {
     try {
       await api.post("/auth/logout");
-    } catch (err) {
+    } catch {
       // Ignore errors if backend is unreachable
     }
     // Manually clear the cookie just in case (essential for the Demo flow)

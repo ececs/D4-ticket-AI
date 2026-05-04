@@ -96,16 +96,15 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
 
   useEffect(() => {
     fetchData();
-  }, [ticketId]);
+  }, [ticketId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Real-time refresh listener (WebSockets)
   useEffect(() => {
     if (refreshSignal > 0 && lastTicketId === ticketId) {
-      console.log("Real-time refresh triggered for ticket:", ticketId);
       fetchData(true);
-      setIsRefreshingWeb(false); // Stop the loading animation on the refresh button
+      setIsRefreshingWeb(false);
     }
-  }, [refreshSignal, lastTicketId, ticketId]);
+  }, [refreshSignal, lastTicketId, ticketId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchData = async (background = false) => {
     if (!background) setIsLoading(true);
@@ -120,9 +119,9 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
       setComments(commentsRes.data);
       setAttachments(attachmentsRes.data);
       setExtractedContent(webCtxRes.data.content);
-    } catch (err: any) {
-      const status = err?.response?.status;
-      const detail = err?.response?.data?.detail;
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number; data?: { detail?: string } } })?.response?.status;
+      const detail = (err as { response?: { status?: number; data?: { detail?: string } } })?.response?.data?.detail;
       setError(
         status === 404
           ? "Ticket not found"

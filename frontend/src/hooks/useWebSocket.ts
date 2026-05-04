@@ -136,5 +136,5 @@ export function useWebSocket(token: string | null) {
         ws.current.close(1000, "Component unmounted");
       }
     };
-  }, [token, addNotification]);
+  }, [token, addNotification]); // eslint-disable-line react-hooks/exhaustive-deps
 }
