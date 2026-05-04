@@ -96,6 +96,16 @@ En el desarrollo de este proyecto se han utilizado herramientas de IA generativa
 *   **Antigravity / GPT**: Utilizados para el scaffolding inicial del frontend y la automatización del proceso de despliegue (CI/CD).
 *   **Propósito**: Todas las decisiones técnicas han sido supervisadas y validadas por el autor para garantizar la robustez y mantenibilidad del sistema.
 
+### 🤝 Uso de IA Durante el Desarrollo
+Durante el desarrollo se utilizaron herramientas de IA generativa como apoyo puntual en tareas de productividad y revisión técnica. En concreto:
+
+*   **Scaffolding y aceleración inicial**: generación de borradores de código para algunas piezas del frontend y backend.
+*   **Testing**: propuesta y ampliación de casos de prueba, incluyendo validaciones y regresiones.
+*   **Revisión técnica**: apoyo en detección de edge cases, validaciones de entrada y ajustes de robustez.
+*   **Documentación**: ayuda en redacción y refinado del README y documentación auxiliar.
+
+Todos los cambios fueron revisados, adaptados e integrados manualmente en el contexto real del proyecto. Ningún fragmento se incorporó sin validación funcional posterior mediante revisión de código, ejecución local y batería de tests.
+
 ---
 
 ### 📜 Licencia
