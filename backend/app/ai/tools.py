@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.ticket import Ticket, TicketStatus, TicketPriority
 from app.models.user import User
 from app.models.comment import Comment
-from app.services import ticket_service, notification_service, knowledge_service, comment_service, scraping_service
+from app.services import ticket_service, notification_service, knowledge_service, comment_service, scraping_service, history_service
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,10 @@ class QueryTicketsSchema(BaseModel):
 
 class GetTicketSchema(BaseModel):
     ticket_id: str = Field(..., description="The UUID string of the ticket")
+
+class GetTicketHistorySchema(BaseModel):
+    ticket_id: str = Field(..., description="UUID of the ticket")
+    limit: int = Field(15, ge=1, le=50, description="Max history entries to return")
 
 class CreateTicketSchema(BaseModel):
     title: str = Field(..., description="Concise title of the issue")
@@ -143,6 +147,31 @@ def make_tools(db: AsyncSession, actor: User) -> List:
                 if not ticket:
                     return "Ticket not found."
                 return f"Title: {ticket.title}\nStatus: {ticket.status.value}\nDescription: {ticket.description}"
+            except Exception as e:
+                return f"Error: {e}"
+
+    @tool(args_schema=GetTicketHistorySchema)
+    async def get_ticket_history(ticket_id: str, limit: int = 15) -> str:
+        """Get the audit history of a ticket: who changed what and when."""
+        async with lock:
+            try:
+                tid = uuid.UUID(ticket_id)
+                entries = await history_service.get_history(db, tid, limit=limit)
+                if not entries:
+                    return "No history found for this ticket."
+                lines = []
+                for e in entries:
+                    actor = e.actor.name if e.actor else "Unknown"
+                    when = e.created_at.strftime("%Y-%m-%d %H:%M")
+                    if e.field == "created":
+                        lines.append(f"[{when}] {actor} created the ticket")
+                    elif e.old_value and e.new_value:
+                        lines.append(f"[{when}] {actor} changed {e.field} from '{e.old_value}' to '{e.new_value}'")
+                    elif e.new_value:
+                        lines.append(f"[{when}] {actor} set {e.field} to '{e.new_value}'")
+                    else:
+                        lines.append(f"[{when}] {actor} updated {e.field}")
+                return "\n".join(lines)
             except Exception as e:
                 return f"Error: {e}"
 
@@ -309,14 +338,15 @@ def make_tools(db: AsyncSession, actor: User) -> List:
         return f"__DELETE_REQUESTED__:{ticket_id}:{title}"
 
     return [
-        query_tickets, 
-        get_ticket, 
-        create_ticket, 
-        change_status, 
-        add_comment, 
-        update_ticket, 
+        query_tickets,
+        get_ticket,
+        get_ticket_history,
+        create_ticket,
+        change_status,
+        add_comment,
+        update_ticket,
         reassign_ticket,
         search_knowledge,
         ai_diagnose_ticket,
-        delete_ticket
+        delete_ticket,
     ]
