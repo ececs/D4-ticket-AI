@@ -16,7 +16,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import api from "@/lib/api";
 import useNotificationStore from "@/stores/notificationStore";
 import { useToast } from "./use-toast";
@@ -45,17 +45,29 @@ export function useTickets(filters: TicketFilters = {}): UseTicketsReturn {
   const refreshSignal = useNotificationStore((s) => s.refreshSignal);
   const lastTicketId = useNotificationStore((s) => s.lastTicketId);
   const deletedTicketId = useNotificationStore((s) => s.deletedTicketId);
+  const lastHandledSignal = useRef(0);
 
   // Partial update or full refetch when the refresh signal is triggered
   useEffect(() => {
     if (refreshSignal === 0) return;
+    // Guard: skip if we already handled this signal value (e.g. re-run caused by
+    // clearing deletedTicketId after the fast-path delete, which would otherwise
+    // fall through to a full refetch unnecessarily).
+    if (refreshSignal === lastHandledSignal.current) return;
+    lastHandledSignal.current = refreshSignal;
 
     if (deletedTicketId) {
-      // Fast path: Remove deleted ticket from local state immediately
-      setTickets((prev) => prev.filter((t) => t.id !== deletedTicketId));
-      setTotal((n) => Math.max(0, n - 1));
-      // CRITICAL: Clear the deleted ID after handling it to avoid "ghost deletions"
-      // on subsequent re-renders or filter changes.
+      // Fast path: filter out the deleted ticket. The optimistic deleteTicket()
+      // already removed it and decremented total, so only touch tickets here to
+      // handle the case where deletion came from another user's session.
+      setTickets((prev) => {
+        const existed = prev.some((t) => t.id === deletedTicketId);
+        if (existed) setTotal((n) => Math.max(0, n - 1));
+        return prev.filter((t) => t.id !== deletedTicketId);
+      });
+      // Clear the deleted ID after handling it to avoid ghost deletions on
+      // subsequent re-renders. The guard above prevents the resulting re-run
+      // from triggering a spurious full refetch.
       setTimeout(() => useNotificationStore.getState().triggerDelete(""), 0);
     } else if (lastTicketId && lastTicketId !== "None" && lastTicketId !== "undefined" && lastTicketId !== "*") {
       // Optimized: Only fetch the updated ticket and update it in the local state

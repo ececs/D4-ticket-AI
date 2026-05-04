@@ -125,5 +125,5 @@ export interface TicketFilters {
   page?: number;
   size?: number;
   sort_by?: string;
-  sort_dir?: "asc" | "desc";
+  order?: "asc" | "desc";
 }
