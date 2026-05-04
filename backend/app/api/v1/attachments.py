@@ -48,7 +48,7 @@ async def upload_attachment(
     # Size validation
     if len(content) > MAX_BYTES:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=f"File exceeds the {settings.MAX_ATTACHMENT_SIZE_MB}MB limit",
         )
 
