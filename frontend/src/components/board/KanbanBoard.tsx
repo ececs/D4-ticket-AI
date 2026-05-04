@@ -35,6 +35,7 @@ import { useState } from "react";
 import { Ticket, TicketStatus } from "@/types";
 import { KanbanColumn } from "./KanbanColumn";
 import { KanbanCard } from "./KanbanCard";
+import { useToast } from "@/hooks/use-toast";
 
 const STATUSES: TicketStatus[] = ["open", "in_progress", "in_review", "closed"];
 
@@ -44,8 +45,9 @@ interface KanbanBoardProps {
 }
 
 export function KanbanBoard({ tickets, onStatusChange }: KanbanBoardProps) {
-  // Track the currently dragged ticket to render its ghost in the DragOverlay
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const { toast } = useToast();
 
   // Require 5px of movement before a drag starts — prevents accidental drags on click
   const sensors = useSensors(
@@ -57,19 +59,29 @@ export function KanbanBoard({ tickets, onStatusChange }: KanbanBoardProps) {
     setActiveTicket(event.active.data.current?.ticket ?? null);
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     setActiveTicket(null);
 
     const { active, over } = event;
-    if (!over) return; // Dropped outside any column
+    if (!over) return;
 
     const ticketId = active.id as string;
     const newStatus = over.id as TicketStatus;
     const currentStatus = (active.data.current?.ticket as Ticket)?.status;
 
-    // Only update if dropped on a different column
-    if (newStatus !== currentStatus && STATUSES.includes(newStatus)) {
-      onStatusChange(ticketId, newStatus);
+    if (newStatus === currentStatus || !STATUSES.includes(newStatus)) return;
+
+    setUpdatingId(ticketId);
+    try {
+      await onStatusChange(ticketId, newStatus);
+    } catch {
+      toast({
+        title: "Error al cambiar estado",
+        description: "No se pudo mover el ticket. Inténtalo de nuevo.",
+        variant: "destructive",
+      });
+    } finally {
+      setUpdatingId(null);
     }
   };
 
@@ -87,7 +99,7 @@ export function KanbanBoard({ tickets, onStatusChange }: KanbanBoardProps) {
       <div className="flex gap-4 overflow-x-auto pb-4">
         {STATUSES.map((status) => (
           <div key={status} className="min-w-[260px] flex-1">
-            <KanbanColumn status={status} tickets={ticketsByStatus[status]} />
+            <KanbanColumn status={status} tickets={ticketsByStatus[status]} updatingId={updatingId} />
           </div>
         ))}
       </div>

@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * DashboardHeader — top navigation bar for all authenticated pages.
  *
@@ -14,17 +16,17 @@
  * Next.js server to this component as a plain string prop).
  */
 
-"use client";
-
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { LogOut, User, Bot } from "lucide-react";
+import { LogOut, Bot } from "lucide-react";
 import useAuthStore from "@/stores/authStore";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { useNotifications } from "@/hooks/useNotifications";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import { ChatSidebar } from "@/components/ai-chat/ChatSidebar";
+import { useUIStore } from "@/hooks/useUIStore";
 import api from "@/lib/api";
 
 interface DashboardHeaderProps {
@@ -36,7 +38,7 @@ export function DashboardHeader({ token }: DashboardHeaderProps) {
   const router = useRouter();
   const { user } = useAuthStore();
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
+  const { isChatOpen: chatOpen, setChatOpen } = useUIStore();
 
   // Initialise real-time connection — safe to call unconditionally (hook handles null token)
   useWebSocket(token);
@@ -45,8 +47,17 @@ export function DashboardHeader({ token }: DashboardHeaderProps) {
   useNotifications();
 
   const handleLogout = async () => {
-    await api.post("/auth/logout").catch(() => {});
+    try {
+      await api.post("/auth/logout");
+    } catch {
+      // Ignore errors if backend is unreachable
+    }
+    // Manually clear the cookie just in case (essential for the Demo flow)
+    document.cookie = "access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;";
+    
+    // Redirect and force a full refresh to clear any state
     router.push("/login");
+    window.location.reload();
   };
 
   return (
@@ -63,7 +74,7 @@ export function DashboardHeader({ token }: DashboardHeaderProps) {
         <div className="flex items-center gap-2">
           {/* AI Chat toggle */}
           <button
-            onClick={() => setChatOpen((o) => !o)}
+            onClick={() => setChatOpen(!chatOpen)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               chatOpen
                 ? "bg-blue-600 text-white"
@@ -84,18 +95,11 @@ export function DashboardHeader({ token }: DashboardHeaderProps) {
               className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
               aria-label="User menu"
             >
-              {user?.avatar_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={user.avatar_url}
-                  alt={user.name}
-                  className="w-7 h-7 rounded-full ring-2 ring-slate-200"
-                />
-              ) : (
-                <span className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-semibold">
-                  {user?.name?.charAt(0).toUpperCase() ?? <User className="w-4 h-4" />}
-                </span>
-              )}
+              <UserAvatar 
+                src={user?.avatar_url} 
+                name={user?.name || "User"} 
+                size="sm" 
+              />
               <span className="text-sm text-slate-700 hidden sm:block max-w-[140px] truncate">
                 {user?.name}
               </span>

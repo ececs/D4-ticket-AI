@@ -12,6 +12,10 @@ engine = create_async_engine(
 
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
+# Alias for services that expect a factory naming pattern (Senior Pattern)
+async_session_factory = AsyncSessionLocal
+
+
 
 async def get_db() -> AsyncSession:
     async with AsyncSessionLocal() as session:

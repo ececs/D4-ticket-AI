@@ -19,6 +19,7 @@ Payload:       JSON string {"user_id": "...", "id": "...", ...}
 import asyncio
 import json
 import logging
+from app.schemas.notification import NotificationPayload
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +29,9 @@ CHANNEL = "notifications"
 async def publish(payload: dict) -> None:
     """
     Publish a notification payload to connected WebSocket clients.
-
-    Routes to Redis if available, otherwise falls back to PostgreSQL NOTIFY
-    (which requires the db session — imported lazily to avoid circular imports).
-    The caller (notification_service) passes the db session for the PG path.
+    
+    The payload is expected to be a dictionary that can be converted
+    to a NotificationPayload schema (or already validated).
     """
     from app.services.cache_service import _redis
 
@@ -71,10 +71,16 @@ async def redis_listen_loop() -> None:
             if message["type"] != "message":
                 continue
             try:
-                data = json.loads(message["data"])
-                user_id = data.get("user_id")
-                if user_id:
-                    await manager.broadcast_to_user(user_id, data)
+                raw_data = json.loads(message["data"])
+                # Extract user_id which is used for routing but not part of WSMessage
+                user_id = raw_data.pop("user_id", None)
+                if not user_id:
+                    continue
+                
+                # Validate the rest as a WSMessage
+                from app.schemas.websocket import WSMessage
+                ws_msg = WSMessage(**raw_data)
+                await manager.broadcast_to_user(str(user_id), ws_msg)
             except Exception as exc:
                 logger.debug("Error processing pub/sub message: %s", exc)
     except asyncio.CancelledError:

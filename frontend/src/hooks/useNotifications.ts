@@ -17,7 +17,7 @@ import useNotificationStore from "@/stores/notificationStore";
 import { Notification } from "@/types";
 
 export function useNotifications() {
-  const { setNotifications, markAsRead, markAllAsRead } = useNotificationStore();
+  const { setNotifications, markAsRead, markAllAsRead, removeNotification } = useNotificationStore();
 
   // Load initial list on mount
   useEffect(() => {
@@ -27,5 +27,9 @@ export function useNotifications() {
   }, [setNotifications]);
 
   // The store actions already call the API — expose them directly
-  return { handleMarkAsRead: markAsRead, handleMarkAllAsRead: markAllAsRead };
+  return {
+    handleMarkAsRead: markAsRead,
+    handleMarkAllAsRead: markAllAsRead,
+    handleDeleteNotification: removeNotification,
+  };
 }

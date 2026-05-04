@@ -33,3 +33,8 @@ class User(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
     )
+
+    @property
+    def display_name(self) -> str:
+        """Returns name if available, otherwise email."""
+        return self.name or self.email or "Unknown User"

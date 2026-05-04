@@ -13,11 +13,14 @@ sticky sessions), we store the OAuth state in a short-lived signed HttpOnly cook
 The state is validated in the callback before the code exchange.
 """
 
+import logging
 import secrets
 from urllib.parse import urlencode
 
+logger = logging.getLogger(__name__)
+
 import httpx
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,8 +31,12 @@ from app.core.security import create_access_token
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.user import UserOut
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+class DemoLoginRequest(BaseModel):
+    code: str = Field(..., description="The secret demo access code")
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -115,6 +122,26 @@ async def auth_callback(
     if not email:
         raise HTTPException(status_code=400, detail="Could not retrieve email from Google")
 
+    # --- Whitelist Check ---
+    allowed = False
+    if settings.ALLOWED_EMAILS == ["*"]:
+        allowed = True
+    else:
+        for pattern in settings.ALLOWED_EMAILS:
+            if pattern.startswith("@") and email.endswith(pattern):
+                allowed = True
+                break
+            if email == pattern:
+                allowed = True
+                break
+
+    if not allowed:
+        logger.warning(f"Restricted access attempt by: {email}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Acceso restringido. Tu correo o dominio no está en la lista de permitidos."
+        )
+
     name: str = user_info.get("name", email)
     avatar_url: str | None = user_info.get("picture")
 
@@ -148,6 +175,47 @@ async def logout(response: Response):
     """Clear the JWT cookie, logging the user out."""
     response.delete_cookie("access_token")
     return {"message": "Logged out successfully"}
+
+
+@router.post("/demo-login", summary="Login with a secret demo code")
+async def demo_login(request: Request, body: DemoLoginRequest, db: DB):
+    """
+    Allow access via a pre-configured secret code.
+    Useful for evaluators who don't want to use Google OAuth.
+    """
+    # --- Rate Limiting ---
+    # Max 5 attempts per 15 minutes per IP to prevent brute-force
+    ip = request.client.host if request.client else "unknown"
+    from app.services.cache_service import is_rate_limited
+    if await is_rate_limited(f"demo_login:{ip}", limit=5, window=900):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Demasiados intentos. Por favor, espera 15 minutos."
+        )
+
+    if not settings.DEMO_ACCESS_CODE or body.code != settings.DEMO_ACCESS_CODE:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Código de acceso incorrecto o no configurado."
+        )
+
+    # Use a fixed email for the demo user
+    demo_email = "evaluator@demo.local"
+    result = await db.execute(select(User).where(User.email == demo_email))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        user = User(
+            email=demo_email,
+            name="Evaluador Orbidi",
+            avatar_url="https://api.dicebear.com/7.x/bottts/svg?seed=orbidi"
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+    jwt_token = create_access_token(str(user.id))
+    return {"token": jwt_token}
 
 
 @router.get("/me", response_model=UserOut, summary="Get current user profile")

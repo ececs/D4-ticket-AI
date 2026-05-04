@@ -17,8 +17,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Ticket, TicketFilters, TicketPriority, TicketStatus } from "@/types";
 import { Badge } from "@/components/ui/badge";
+import { UserAvatar } from "@/components/ui/UserAvatar";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { STATUS_LABELS, PRIORITY_CONFIG, timeAgo } from "@/lib/utils";
-import { ChevronUp, ChevronDown, ChevronsUpDown, Trash2, ExternalLink } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronsUpDown, Trash2, ExternalLink, CheckSquare, Square, ClipboardList, SearchX } from "lucide-react";
+import { useSelectionStore } from "@/stores/useSelectionStore";
 
 const STATUSES: TicketStatus[] = ["open", "in_progress", "in_review", "closed"];
 const PRIORITIES: TicketPriority[] = ["low", "medium", "high", "critical"];
@@ -53,6 +56,7 @@ export function TicketTable({
   const router = useRouter();
   const [sortBy, setSortBy] = useState<SortField | undefined>(undefined);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const handleSort = (field: SortField) => {
     const newDir = sortBy === field && sortDir === "desc" ? "asc" : "desc";
@@ -61,10 +65,30 @@ export function TicketTable({
     onFiltersChange({ ...filters, sort_by: field, sort_dir: newDir });
   };
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
+  const { selectedTicketIds, toggleTicket, setSelection } = useSelectionStore();
+
+  const handleSelectAll = () => {
+    if (selectedTicketIds.length === tickets.length && tickets.length > 0) {
+      setSelection([]);
+    } else {
+      setSelection(tickets.map(t => t.id));
+    }
+  };
+
+  const handleDelete = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (confirm("Delete this ticket? This action cannot be undone.")) {
-      await onDeleteTicket(id);
+    setPendingDeleteId(id);
+  };
+
+  const handleConfirmDelete = async () => {
+    const id = pendingDeleteId;
+    setPendingDeleteId(null);
+    if (id) {
+      try {
+        await onDeleteTicket(id);
+      } catch {
+        // deleteTicket already shows a toast and rolls back the UI on failure
+      }
     }
   };
 
@@ -85,6 +109,7 @@ export function TicketTable({
         {/* Search */}
         <input
           type="text"
+          aria-label="Buscar tickets"
           placeholder="Search tickets..."
           value={filters.search ?? ""}
           onChange={(e) => onFiltersChange({ ...filters, search: e.target.value, page: 1 })}
@@ -93,6 +118,7 @@ export function TicketTable({
 
         {/* Status filter */}
         <select
+          aria-label="Filtrar por estado"
           value={filters.status ?? ""}
           onChange={(e) =>
             onFiltersChange({ ...filters, status: (e.target.value as TicketStatus) || undefined, page: 1 })
@@ -107,6 +133,7 @@ export function TicketTable({
 
         {/* Priority filter */}
         <select
+          aria-label="Filtrar por prioridad"
           value={filters.priority ?? ""}
           onChange={(e) =>
             onFiltersChange({ ...filters, priority: (e.target.value as TicketPriority) || undefined, page: 1 })
@@ -127,19 +154,31 @@ export function TicketTable({
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              <th className="text-left px-4 py-3">
+              <th className="px-4 py-3 w-10">
+                <button
+                  onClick={handleSelectAll}
+                  aria-label={selectedTicketIds.length === tickets.length && tickets.length > 0 ? "Deseleccionar todos" : "Seleccionar todos"}
+                  className="text-slate-400 hover:text-blue-600 transition-colors"
+                >
+                  {selectedTicketIds.length === tickets.length && tickets.length > 0 
+                    ? <CheckSquare className="w-4 h-4" /> 
+                    : <Square className="w-4 h-4" />
+                  }
+                </button>
+              </th>
+              <th className="text-left px-4 py-3" aria-sort={sortBy === "title" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
                 <ColHeader field="title" label="Title" />
               </th>
-              <th className="text-left px-4 py-3">
+              <th className="text-left px-4 py-3" aria-sort={sortBy === "status" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
                 <ColHeader field="status" label="Status" />
               </th>
-              <th className="text-left px-4 py-3">
+              <th className="text-left px-4 py-3" aria-sort={sortBy === "priority" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
                 <ColHeader field="priority" label="Priority" />
               </th>
               <th className="text-left px-4 py-3 hidden md:table-cell">
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Assignee</span>
               </th>
-              <th className="text-left px-4 py-3 hidden lg:table-cell">
+              <th className="text-left px-4 py-3 hidden lg:table-cell" aria-sort={sortBy === "created_at" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
                 <ColHeader field="created_at" label="Created" />
               </th>
               <th className="px-4 py-3" />
@@ -157,16 +196,36 @@ export function TicketTable({
 
             {!isLoading && tickets.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-slate-400">
-                  No tickets found.{" "}
-                  {(filters.search || filters.status || filters.priority) && (
-                    <button
-                      onClick={() => onFiltersChange({})}
-                      className="text-blue-600 hover:underline"
-                    >
-                      Clear filters
-                    </button>
-                  )}
+                <td colSpan={7} className="px-4 py-14 text-center">
+                  <div className="flex flex-col items-center gap-3">
+                    {(filters.search || filters.status || filters.priority) ? (
+                      <>
+                        <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center">
+                          <SearchX className="w-6 h-6 text-slate-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-slate-600">No tickets match your filters</p>
+                          <p className="text-xs text-slate-400 mt-0.5">Try adjusting your search or clearing the filters</p>
+                        </div>
+                        <button
+                          onClick={() => onFiltersChange({})}
+                          className="text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                        >
+                          Clear all filters
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center">
+                          <ClipboardList className="w-6 h-6 text-blue-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-slate-600">All clear! No tickets yet</p>
+                          <p className="text-xs text-slate-400 mt-0.5">Create your first ticket to get started</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </td>
               </tr>
             )}
@@ -176,8 +235,27 @@ export function TicketTable({
                 <tr
                   key={ticket.id}
                   onClick={() => router.push(`/tickets/${ticket.id}`)}
-                  className="hover:bg-slate-50 cursor-pointer transition-colors group"
+                  className={`hover:bg-slate-50 cursor-pointer transition-colors group ${
+                    selectedTicketIds.includes(ticket.id) ? "bg-blue-50/50" : ""
+                  }`}
                 >
+                  {/* Selection Checkbox */}
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => toggleTicket(ticket.id)}
+                      aria-label={selectedTicketIds.includes(ticket.id) ? "Deseleccionar ticket" : "Seleccionar ticket"}
+                      className={`${
+                        selectedTicketIds.includes(ticket.id)
+                          ? "text-blue-600"
+                          : "text-slate-300 hover:text-slate-400"
+                      } transition-colors`}
+                    >
+                      {selectedTicketIds.includes(ticket.id) 
+                        ? <CheckSquare className="w-4 h-4" /> 
+                        : <Square className="w-4 h-4" />
+                      }
+                    </button>
+                  </td>
                   {/* Title */}
                   <td className="px-4 py-3">
                     <span className="font-medium text-slate-800 group-hover:text-blue-600 transition-colors line-clamp-1">
@@ -204,20 +282,13 @@ export function TicketTable({
 
                   {/* Assignee */}
                   <td className="px-4 py-3 hidden md:table-cell">
-                    {ticket.assignee ? (
+                     {ticket.assignee ? (
                       <div className="flex items-center gap-2">
-                        {ticket.assignee.avatar_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={ticket.assignee.avatar_url}
-                            alt={ticket.assignee.name}
-                            className="w-5 h-5 rounded-full"
-                          />
-                        ) : (
-                          <span className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-xs font-medium text-slate-600">
-                            {ticket.assignee.name.charAt(0).toUpperCase()}
-                          </span>
-                        )}
+                        <UserAvatar 
+                          src={ticket.assignee.avatar_url} 
+                          name={ticket.assignee.name} 
+                          size="xs" 
+                        />
                         <span className="text-slate-600 truncate max-w-[120px]">{ticket.assignee.name}</span>
                       </div>
                     ) : (
@@ -235,6 +306,7 @@ export function TicketTable({
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={(e) => { e.stopPropagation(); router.push(`/tickets/${ticket.id}`); }}
+                        aria-label="Abrir ticket"
                         className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
                         title="Open ticket"
                       >
@@ -242,6 +314,7 @@ export function TicketTable({
                       </button>
                       <button
                         onClick={(e) => handleDelete(e, ticket.id)}
+                        aria-label="Eliminar ticket"
                         className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors"
                         title="Delete ticket"
                       >
@@ -277,6 +350,15 @@ export function TicketTable({
           </button>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!pendingDeleteId}
+        title="Delete ticket"
+        description="This action cannot be undone. The ticket and all its comments and attachments will be permanently removed."
+        confirmLabel="Delete ticket"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setPendingDeleteId(null)}
+      />
     </div>
   );
 }

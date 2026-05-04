@@ -28,6 +28,8 @@ export interface Ticket {
   priority: TicketPriority;
   author_id: string;
   assignee_id: string | null;
+  client_url: string | null;
+  client_summary: string | null;
   created_at: string;
   updated_at: string;
   author: User | null;
@@ -46,6 +48,8 @@ export interface TicketCreate {
   description?: string;
   priority?: TicketPriority;
   assignee_id?: string | null;
+  client_url?: string | null;
+  client_summary?: string | null;
 }
 
 export interface TicketUpdate {
@@ -54,6 +58,8 @@ export interface TicketUpdate {
   status?: TicketStatus;
   priority?: TicketPriority;
   assignee_id?: string | null;
+  client_url?: string | null;
+  client_summary?: string | null;
 }
 
 // ─── Comment ─────────────────────────────────────────────────────────────────
@@ -82,13 +88,18 @@ export interface Attachment {
 
 // ─── Notification ────────────────────────────────────────────────────────────
 
-export type NotificationType = "assigned" | "commented" | "status_changed";
+export type NotificationType =
+  | "assigned"
+  | "commented"
+  | "status_changed"
+  | "ticket_updated"
+  | "ticket_deleted";
 
 export interface Notification {
   id: string;
   user_id: string;
   type: NotificationType;
-  ticket_id: string;
+  ticket_id: string | null;
   message: string;
   read: boolean;
   created_at: string;

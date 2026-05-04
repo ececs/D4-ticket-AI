@@ -2,14 +2,15 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import DateTime, Integer, String, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 
 try:
     from pgvector.sqlalchemy import Vector as _Vector
-    _EMBEDDING_TYPE = _Vector(1536)
+    # Standardized to 768 to optimize semantic search performance.
+    _EMBEDDING_TYPE = _Vector(768)
 except ImportError:
     from sqlalchemy import LargeBinary
     _EMBEDDING_TYPE = LargeBinary()
@@ -23,6 +24,8 @@ class KnowledgeChunk(Base):
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[Optional[list]] = mapped_column(_EMBEDDING_TYPE, nullable=True)
+    # Metadata for filtering (e.g., {"ticket_id": "..."})
+    chunk_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

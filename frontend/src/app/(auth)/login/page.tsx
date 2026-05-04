@@ -1,22 +1,57 @@
+"use client";
+
 /**
  * Login page.
  *
- * This is a Server Component (no "use client" directive) because it contains
- * no interactivity — it just renders a static page with a link to the OAuth flow.
+ * Converted to Client Component to support Demo Access Code interaction.
  *
  * The "Sign in with Google" button is an anchor tag pointing to the backend's
  * /auth/google endpoint. Clicking it redirects the browser to Google's consent
- * screen (handled entirely by Authlib on the backend).
+ * screen.
  *
- * After successful login, the backend redirects to /board with the
- * access_token cookie set — Next.js middleware then allows access to protected routes.
+ * The Demo Access Code input allows evaluators to bypass Google login by 
+ * providing a pre-configured secret code.
  */
 
-import { Ticket } from "lucide-react";
+import { useState } from "react";
+import { Ticket, KeyRound, Loader2 } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export default function LoginPage() {
+  const [code, setCode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleDemoLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!code) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`${API_URL}/api/v1/auth/demo-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.token) {
+        // Use the existing callback route to set the cookie and redirect to /board
+        window.location.href = `/api/auth/callback?token=${data.token}`;
+      } else {
+        setError(data.detail || "Código de acceso inválido.");
+      }
+    } catch {
+      setError("Error al conectar con el servidor.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="bg-white rounded-2xl shadow-lg p-10 max-w-md w-full mx-4 text-center">
@@ -32,7 +67,8 @@ export default function LoginPage() {
         {/* Google OAuth button */}
         <a
           href={`${API_URL}/api/v1/auth/google`}
-          className="flex items-center justify-center gap-3 w-full py-3 px-6 border border-slate-200 rounded-lg text-slate-700 font-medium hover:bg-slate-50 transition-colors"
+          aria-label="Iniciar sesión con Google"
+          className="flex items-center justify-center gap-3 w-full py-3 px-6 border border-slate-200 rounded-lg text-slate-700 font-medium hover:bg-slate-50 transition-colors mb-6"
         >
           {/* Google SVG logo */}
           <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
@@ -56,7 +92,39 @@ export default function LoginPage() {
           Sign in with Google
         </a>
 
-        <p className="mt-6 text-xs text-slate-400">
+        <div className="relative mb-6">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t border-slate-200"></span>
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-white px-2 text-slate-400">or use demo access</span>
+          </div>
+        </div>
+
+        <form onSubmit={handleDemoLogin} className="space-y-4">
+          <div className="relative">
+            <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              id="demo-code"
+              aria-label="Código de acceso demo"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="Enter Access Code"
+              className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-transparent transition-all"
+            />
+          </div>
+          {error && <p className="text-xs text-rose-500 font-medium">{error}</p>}
+          <button
+            type="submit"
+            disabled={loading || !code}
+            className="w-full py-2 px-4 bg-slate-800 text-white rounded-lg text-sm font-medium hover:bg-slate-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Access System"}
+          </button>
+        </form>
+
+        <p className="mt-8 text-xs text-slate-400">
           By signing in, you agree to our terms of service. <br />
           Your account is created automatically on first login.
         </p>

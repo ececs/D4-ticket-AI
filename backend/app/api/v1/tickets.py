@@ -32,9 +32,11 @@ from app.core.dependencies import CurrentUser, DB
 from app.models.ticket import Ticket, TicketPriority, TicketStatus
 from app.models.user import User
 from app.schemas.ticket import TicketCreate, TicketListResponse, TicketOut, TicketUpdate
-from app.services import notification_service
 from app.services.cache_service import cache_get, cache_set, cache_invalidate_prefix
 from app.services.embedding_service import generate_embedding, generate_ticket_embedding
+from app.services import ticket_service, notification_service, ai_copilot_service, scraping_service
+from app.schemas.websocket import WSMessageType
+from app.models.knowledge_chunk import KnowledgeChunk
 
 CACHE_PREFIX = "tickets:"
 CACHE_TTL = 60  # seconds
@@ -134,42 +136,30 @@ async def list_tickets(
 
 @router.post("", response_model=TicketOut, status_code=status.HTTP_201_CREATED, summary="Create a ticket")
 async def create_ticket(body: TicketCreate, db: DB, current_user: CurrentUser):
-    assignee: User | None = None
-    if body.assignee_id:
-        result = await db.execute(select(User).where(User.id == body.assignee_id))
-        assignee = result.scalar_one_or_none()
-        if not assignee:
-            raise HTTPException(status_code=404, detail="Assignee not found")
-
-    ticket = Ticket(
+    ticket = await ticket_service.create_ticket(
+        db=db,
         title=body.title,
         description=body.description,
         priority=body.priority,
         author_id=current_user.id,
         assignee_id=body.assignee_id,
+        client_url=body.client_url,
+        client_summary=body.client_summary,
     )
-    db.add(ticket)
-    await db.flush()
 
-    if assignee:
-        await notification_service.notify_ticket_assigned(
-            db, ticket=ticket, assignee=assignee, actor=current_user
-        )
-
-    await db.commit()
-    await db.refresh(ticket)
-
-    asyncio.create_task(_embed_ticket(ticket.id, body.title, body.description))
+    if body.client_url:
+        asyncio.create_task(scraping_service.scrape_and_index_url(ticket.id, body.client_url))
     await cache_invalidate_prefix(CACHE_PREFIX)
 
-    return await _get_ticket_with_relations(db, ticket.id)
+    return ticket
 
 
 @router.get("/{ticket_id}", response_model=TicketOut, summary="Get a ticket by ID")
 async def get_ticket(ticket_id: uuid.UUID, db: DB, current_user: CurrentUser):
-    ticket = await _get_ticket_with_relations(db, ticket_id)
+    ticket = await ticket_service.get_ticket(db, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    
     return ticket
 
 
@@ -185,39 +175,21 @@ async def update_ticket(
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    old_status = ticket.status
-    old_assignee_id = ticket.assignee_id
+    # --- Authorization Check ---
+    # We allow any authenticated user to update the ticket for demo purposes.
+    # (Previously restricted to author or assignee).
 
     update_data = body.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(ticket, field, value)
-
-    await db.flush()
-
-    if body.status is not None and body.status != old_status:
-        await notification_service.notify_status_changed(
-            db, ticket=ticket, actor=current_user, new_status=body.status.value
-        )
-
-    if body.assignee_id is not None and body.assignee_id != old_assignee_id:
-        result = await db.execute(select(User).where(User.id == body.assignee_id))
-        new_assignee = result.scalar_one_or_none()
-        if new_assignee:
-            await notification_service.notify_ticket_assigned(
-                db, ticket=ticket, assignee=new_assignee, actor=current_user
-            )
-
-    await db.commit()
-
-    text_changed = body.title is not None or body.description is not None
-    if text_changed:
-        new_title = body.title or ticket.title
-        new_desc = body.description if body.description is not None else ticket.description
-        asyncio.create_task(_embed_ticket(ticket_id, new_title, new_desc))
+    updated_ticket = await ticket_service.update_ticket(
+        db=db,
+        ticket_id=ticket_id,
+        update_data=update_data,
+        actor=current_user,
+    )
 
     await cache_invalidate_prefix(CACHE_PREFIX)
 
-    return await _get_ticket_with_relations(db, ticket_id)
+    return updated_ticket
 
 
 @router.delete("/{ticket_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a ticket")
@@ -227,23 +199,89 @@ async def delete_ticket(ticket_id: uuid.UUID, db: DB, current_user: CurrentUser)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
+    if ticket.author_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el autor puede eliminar este ticket."
+        )
+
+    title = ticket.title
+
     await db.delete(ticket)
     await db.commit()
+
+    # Notify after commit so the ticket_id FK is already gone
+    await notification_service.notify_ticket_deleted(db, ticket_id, title, current_user)
+    await db.commit()
+    
+    # Broadcast deletion for real-time UI sync (Global)
+    await notification_service.broadcast_global_event(
+        type=WSMessageType.TICKET_DELETED, 
+        data={"id": str(ticket_id), "title": title},
+        db=db
+    )
+    
     await cache_invalidate_prefix(CACHE_PREFIX)
 
 
-# ─── Private helpers ──────────────────────────────────────────────────────────
+from fastapi.responses import StreamingResponse
 
-async def _get_ticket_with_relations(db: DB, ticket_id: uuid.UUID) -> TicketOut | None:
-    result = await db.execute(
-        select(Ticket)
-        .options(
-            selectinload(Ticket.author),    # type: ignore[attr-defined]
-            selectinload(Ticket.assignee),  # type: ignore[attr-defined]
-        )
-        .where(Ticket.id == ticket_id)
+@router.get("/{ticket_id}/diagnosis")
+async def get_diagnosis(
+    ticket_id: uuid.UUID,
+    db: DB,
+    current_user: CurrentUser,
+):
+    """
+    Generate an AI diagnosis and suggested solution for a ticket.
+    Streams the response token-by-token.
+    """
+    return StreamingResponse(
+        ai_copilot_service.stream_ticket_diagnosis(db, ticket_id),
+        media_type="text/event-stream"
     )
-    return result.scalar_one_or_none()
+
+
+@router.get("/{ticket_id}/web-context")
+async def get_ticket_web_context(
+    ticket_id: uuid.UUID,
+    db: DB,
+    current_user: CurrentUser,
+):
+    """
+    Fetches the latest AI-extracted web context for this ticket.
+    """
+    # Use a more robust way to query JSON content in SQLAlchemy
+    result = await db.execute(
+        select(KnowledgeChunk)
+        .where(func.json_extract_path_text(KnowledgeChunk.chunk_metadata, "ticket_id") == str(ticket_id))
+        .order_by(KnowledgeChunk.created_at.desc())
+        .limit(1)
+    )
+    chunk = result.scalar_one_or_none()
+    return {"content": chunk.content if chunk else None}
+
+
+@router.post("/{ticket_id}/web-scrape-refresh")
+async def refresh_ticket_web_scrape(
+    ticket_id: uuid.UUID,
+    db: DB,
+    current_user: CurrentUser,
+):
+    """
+    Manually triggers a new web scrape for the ticket's URL.
+    """
+    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = result.scalar_one_or_none()
+    if not ticket or not ticket.client_url:
+        raise HTTPException(status_code=400, detail="Ticket has no URL to scrape.")
+    
+    # Trigger background task
+    asyncio.create_task(scraping_service.scrape_and_index_url(ticket_id, ticket.client_url))
+    return {"status": "scraping_started"}
+
+
+# ─── Private helpers ──────────────────────────────────────────────────────────
 
 
 async def _embed_ticket(ticket_id: uuid.UUID, title: str, description: str | None) -> None:

@@ -25,9 +25,10 @@ const COLUMN_COLORS: Record<TicketStatus, string> = {
 interface KanbanColumnProps {
   status: TicketStatus;
   tickets: Ticket[];
+  updatingId?: string | null;
 }
 
-export function KanbanColumn({ status, tickets }: KanbanColumnProps) {
+export function KanbanColumn({ status, tickets, updatingId }: KanbanColumnProps) {
   // useDroppable: this column acts as a drop target.
   // The id must match the status value so onDragEnd can identify the target column.
   const { setNodeRef, isOver } = useDroppable({ id: status });
@@ -53,7 +54,7 @@ export function KanbanColumn({ status, tickets }: KanbanColumnProps) {
         }`}
       >
         {tickets.map((ticket) => (
-          <KanbanCard key={ticket.id} ticket={ticket} />
+          <KanbanCard key={ticket.id} ticket={ticket} isUpdating={updatingId === ticket.id} />
         ))}
 
         {tickets.length === 0 && (

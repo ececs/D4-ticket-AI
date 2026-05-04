@@ -35,14 +35,19 @@ async def init_checkpointer() -> None:
         from psycopg_pool import AsyncConnectionPool
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
         from app.core.config import settings
+        
+        # Use a more visible logger for startup
+        v_logger = logging.getLogger("uvicorn.error")
 
-        raw_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+        # Ensure we have a standard postgresql:// URL for psycopg (no +asyncpg)
+        db_url = settings.DATABASE_URL
+        if "+asyncpg" in db_url:
+            db_url = db_url.replace("+asyncpg", "")
+        
+        v_logger.info("Initializing checkpointer with URL: %s", db_url.split("@")[-1])
 
-        # autocommit=True required: AsyncPostgresSaver.setup() uses CREATE INDEX
-        # CONCURRENTLY which cannot run inside a transaction block.
-        # prepare_threshold=0 disables prepared statements (incompatible with pgbouncer).
         _pool = AsyncConnectionPool(
-            conninfo=raw_url,
+            conninfo=db_url,
             min_size=1,
             max_size=3,
             open=False,
@@ -50,13 +55,17 @@ async def init_checkpointer() -> None:
         )
         await _pool.open(wait=True, timeout=10.0)
 
+        # Initialize the checkpointer with the pool
         _checkpointer = AsyncPostgresSaver(_pool)
-        await _checkpointer.setup()  # idempotent: creates checkpoint_* tables once
-
-        logger.info("LangGraph AsyncPostgresSaver initialized — agent memory enabled")
+        
+        # CRITICAL: Ensure tables exist
+        await _checkpointer.setup()
+        
+        v_logger.info("✅ LangGraph Checkpointer fully initialized and persistent")
+        return _checkpointer
 
     except Exception as exc:
-        logger.warning("Checkpointer unavailable (%s) — agent running in stateless mode", exc)
+        logging.getLogger("uvicorn.error").error("❌ Checkpointer FAILED to initialize: %s", exc, exc_info=True)
         _checkpointer = None
         _pool = None
 

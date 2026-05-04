@@ -25,10 +25,13 @@ Memory strategy:
 
 import json
 import uuid
+import logging
+from typing import List, Optional
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from langchain_core.messages import HumanMessage
 
 from app.core.dependencies import CurrentUser, DB
 from app.ai.agent import build_agent
@@ -43,8 +46,117 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    messages: list[ChatMessage]
-    thread_id: str | None = None  # UUID generated and persisted by the frontend
+    messages: List[ChatMessage]
+    thread_id: Optional[str] = None
+    current_ticket_id: Optional[str] = None
+    selected_ticket_ids: Optional[List[str]] = None
+
+
+# ---------------------------------------------------------------------------
+# Shared SSE streaming helper (Single Responsibility)
+# ---------------------------------------------------------------------------
+
+async def _agent_sse_stream(agent, initial_state, config: dict, thread_id: str):
+    """
+    Core SSE generator shared by /chat and /resume.
+    Streams LangGraph agent events and detects interrupts after the stream ends.
+    """
+    v_logger = logging.getLogger("uvicorn.error")
+    yield f"data: {json.dumps({'type': 'session', 'thread_id': thread_id})}\n\n"
+    yield f"data: {json.dumps({'type': 'token', 'content': ' '})}\n\n"
+
+    try:
+        has_content = False
+        active_model = "IA"
+        debug_prefix_sent = False
+
+        async for event in agent.astream_events(initial_state, version="v2", config=config):
+            kind = event["event"]
+
+            if kind == "on_chat_model_start":
+                m_name = event.get("name", "")
+                if "Google" in m_name:
+                    active_model = "Gemini"
+                elif "OpenAI" in m_name:
+                    active_model = "GPT"
+                v_logger.info("AI Model Starting: %s (%s)", m_name, active_model)
+
+            elif kind == "on_chat_model_stream":
+                chunk = event["data"]["chunk"]
+                if chunk and hasattr(chunk, "content") and chunk.content:
+                    has_content = True
+                    content = chunk.content
+                    if not debug_prefix_sent:
+                        content = f"{active_model}: " + content
+                        debug_prefix_sent = True
+                    yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
+
+            elif kind == "on_tool_start":
+                yield f"data: {json.dumps({'type': 'tool_start', 'name': event.get('name', '')})}\n\n"
+
+            elif kind == "on_tool_end":
+                tool_name = event.get("name", "")
+                raw_output = event.get("data", {}).get("output", "")
+                tool_output = str(raw_output.content) if hasattr(raw_output, "content") else str(raw_output)
+
+                # Intercept the delete marker — show a confirmation UI instead of raw text
+                if tool_output.startswith("__DELETE_REQUESTED__:"):
+                    parts = tool_output.split(":", 2)
+                    t_id = parts[1] if len(parts) > 1 else ""
+                    t_title = parts[2] if len(parts) > 2 else "este ticket"
+                    yield f"data: {json.dumps({'type': 'confirmation_required', 'ticket_id': t_id, 'ticket_title': t_title})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'tool_call', 'name': tool_name, 'result': tool_output})}\n\n"
+
+        if not has_content:
+            v_logger.warning("AI Stream: no content for thread %s", thread_id)
+            yield f"data: {json.dumps({'type': 'token', 'content': '*(Sistema: Los modelos de IA no han respondido. Por favor, intenta de nuevo.)*'})}\n\n"
+
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    except Exception as e:
+        error_msg = str(e)
+        v_logger.error("SSE stream error: %s", error_msg, exc_info=True)
+        friendly = _make_friendly_error(error_msg)
+        yield f"data: {json.dumps({'type': 'error', 'content': friendly})}\n\n"
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+
+def _make_friendly_error(error_msg: str) -> str:
+    if "429" in error_msg or "quota" in error_msg.lower():
+        return "*(Sistema: Límite de uso de IA alcanzado. Espera unos segundos.)*"
+    if "api_key" in error_msg.lower() or "401" in error_msg:
+        return "*(Sistema: Error de configuración de clave de IA.)*"
+    return error_msg
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/history/{thread_id}")
+async def get_chat_history(thread_id: str):
+    """
+    Fetch historical messages for a thread from the checkpointer.
+    Allows the frontend to restore UI state after a page refresh.
+    """
+    checkpointer = get_checkpointer()
+    if not checkpointer:
+        return {"messages": []}
+
+    config = {"configurable": {"thread_id": thread_id}}
+    state = await checkpointer.aget(config)
+
+    if not state or "messages" not in state.values:
+        return {"messages": []}
+
+    history = []
+    for msg in state.values["messages"]:
+        role = "user" if msg.type == "human" else "assistant"
+        if msg.type in ["human", "ai"]:
+            history.append({"role": role, "content": msg.content})
+
+    return {"messages": history}
 
 
 @router.post("/chat")
@@ -53,72 +165,94 @@ async def chat(
     db: DB,
     current_user: CurrentUser,
 ):
-    """
-    Stream an AI response. Supports persistent memory via thread_id.
-
-    With checkpointer (production):
-      - thread_id identifies the conversation in PostgreSQL.
-      - Only the latest user message is passed; the agent loads history
-        from the checkpoint automatically.
-
-    Without checkpointer (stateless fallback):
-      - Full message history is passed on every request (legacy behavior).
-    """
     checkpointer = get_checkpointer()
-    thread_id = request.thread_id or str(uuid.uuid4())
-    agent = build_agent(db, current_user)
+    thread_id = request.thread_id or str(current_user.id)
 
-    if checkpointer and request.thread_id:
-        # Persistent mode: send only the new user message; agent recovers history
-        lc_messages = [{"role": "user", "content": request.messages[-1].content}]
+    v_logger = logging.getLogger("uvicorn.error")
+    v_logger.info("AI Session: thread_id=%s", thread_id)
+
+    # Build dynamic ticket context (full data, not just IDs)
+    context_parts = []
+
+    if request.current_ticket_id:
+        try:
+            from app.services.ticket_service import get_ticket
+            ticket_data = await get_ticket(db, uuid.UUID(request.current_ticket_id))
+            if ticket_data:
+                context_parts.append(
+                    f"USER IS CURRENTLY VIEWING THIS TICKET (USE THIS FULL ID FOR ACTIONS):\n"
+                    f"FULL_ID: {str(ticket_data.id)}\n"
+                    f"Title: {ticket_data.title}\n"
+                    f"Status: {ticket_data.status.value}\n"
+                    f"Priority: {ticket_data.priority.value}\n"
+                    f"Description: {ticket_data.description or 'No description'}"
+                )
+        except Exception as e:
+            v_logger.warning("AI Context: failed to fetch ticket: %s", e)
+
+    if request.selected_ticket_ids:
+        try:
+            from app.models.ticket import Ticket
+            from sqlalchemy import select
+            other_ids = [
+                uuid.UUID(tid) for tid in request.selected_ticket_ids
+                if tid != request.current_ticket_id
+            ]
+            if other_ids:
+                from sqlalchemy import select as sa_select
+                res = await db.execute(sa_select(Ticket).where(Ticket.id.in_(other_ids)))
+                selected = res.scalars().all()
+                if selected:
+                    lines = "USER HAS SELECTED THESE TICKETS (USE THESE FULL IDs FOR ACTIONS):\n"
+                    for t in selected:
+                        lines += f"- Title: {t.title} | Status: {t.status.value} | FULL_ID: {str(t.id)}\n"
+                    context_parts.append(lines)
+        except Exception as e:
+            v_logger.warning("AI Context: failed to fetch selected tickets: %s", e)
+
+    extra_context = "\n\n" + "\n\n---\n\n".join(context_parts) if context_parts else ""
+
+    try:
+        agent = build_agent(db, current_user, system_context=extra_context)
+    except Exception as e:
+        error_msg = str(e)
+        v_logger.error("AI Initialization Failed: %s", error_msg, exc_info=True)
+
+        async def error_generator():
+            yield f"data: {json.dumps({'type': 'error', 'content': f'*(Error de Configuración: {error_msg})*'})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        return StreamingResponse(error_generator(), media_type="text/event-stream")
+
+    if checkpointer and thread_id:
+        # Persistent mode: send only the new message; agent recovers history from checkpoint
+        initial_state = {
+            "messages": [HumanMessage(content=request.messages[-1].content)],
+            "remaining_steps": 40,
+        }
     else:
-        # Stateless fallback: send the full conversation history
-        lc_messages = [
-            {"role": msg.role, "content": msg.content}
-            for msg in request.messages
-        ]
+        # Stateless fallback: send full conversation history
+        initial_state = {
+            "messages": [
+                {"role": msg.role, "content": msg.content}
+                for msg in request.messages
+            ],
+            "remaining_steps": 40,
+        }
 
     config = {"configurable": {"thread_id": thread_id}}
 
+    if checkpointer:
+        state = await agent.aget_state(config)
+        history_count = len(state.values.get("messages", [])) if state.values else 0
+        v_logger.info("Memory Check: Thread %s has %d messages", thread_id, history_count)
+
     async def event_stream():
-        # First event: confirm the thread_id so the frontend can persist it
-        yield f"data: {json.dumps({'type': 'session', 'thread_id': thread_id})}\n\n"
-
-        try:
-            async for event in agent.astream_events(
-                {"messages": lc_messages},
-                config=config,
-                version="v2",
-            ):
-                kind = event.get("event")
-
-                if kind == "on_chat_model_stream":
-                    chunk = event.get("data", {}).get("chunk")
-                    if chunk and hasattr(chunk, "content") and chunk.content:
-                        payload = json.dumps({"type": "token", "content": chunk.content})
-                        yield f"data: {payload}\n\n"
-
-                elif kind == "on_tool_end":
-                    tool_name = event.get("name", "")
-                    tool_output = event.get("data", {}).get("output", "")
-                    payload = json.dumps({
-                        "type": "tool_call",
-                        "name": tool_name,
-                        "result": str(tool_output),
-                    })
-                    yield f"data: {payload}\n\n"
-
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
-
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        async for chunk in _agent_sse_stream(agent, initial_state, config, thread_id):
+            yield chunk
 
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

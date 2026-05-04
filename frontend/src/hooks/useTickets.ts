@@ -18,6 +18,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import api from "@/lib/api";
+import useNotificationStore from "@/stores/notificationStore";
+import { useToast } from "./use-toast";
 import { Ticket, TicketFilters, TicketListResponse, TicketStatus, TicketUpdate } from "@/types";
 
 interface UseTicketsReturn {
@@ -37,8 +39,39 @@ export function useTickets(filters: TicketFilters = {}): UseTicketsReturn {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fetchKey, setFetchKey] = useState(0); // increment to trigger re-fetch
+  const { toast } = useToast();
 
   const refetch = useCallback(() => setFetchKey((k) => k + 1), []);
+  const refreshSignal = useNotificationStore((s) => s.refreshSignal);
+  const lastTicketId = useNotificationStore((s) => s.lastTicketId);
+  const deletedTicketId = useNotificationStore((s) => s.deletedTicketId);
+
+  // Partial update or full refetch when the refresh signal is triggered
+  useEffect(() => {
+    if (refreshSignal === 0) return;
+
+    if (deletedTicketId) {
+      // Fast path: Remove deleted ticket from local state immediately
+      setTickets((prev) => prev.filter((t) => t.id !== deletedTicketId));
+      setTotal((n) => Math.max(0, n - 1));
+      // CRITICAL: Clear the deleted ID after handling it to avoid "ghost deletions"
+      // on subsequent re-renders or filter changes.
+      setTimeout(() => useNotificationStore.getState().triggerDelete(""), 0);
+    } else if (lastTicketId && lastTicketId !== "None" && lastTicketId !== "undefined" && lastTicketId !== "*") {
+      // Optimized: Only fetch the updated ticket and update it in the local state
+      api.get<Ticket>(`/tickets/${lastTicketId}`)
+        .then(({ data }) => {
+          setTickets((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+        })
+        .catch((err) => {
+          console.error("Failed to fetch partial update, falling back to full refetch", err);
+          refetch();
+        });
+    } else {
+      // Fallback: Full refresh for general events
+      refetch();
+    }
+  }, [refreshSignal, lastTicketId, deletedTicketId, refetch]);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,8 +121,13 @@ export function useTickets(filters: TicketFilters = {}): UseTicketsReturn {
           prev.map((t) => (t.id === ticketId ? { ...t, status: previous.status } : t))
         );
       }
+      toast({
+        variant: "destructive",
+        title: "Connection Error",
+        description: "Failed to update ticket status. Changes have been rolled back.",
+      });
     }
-  }, [tickets]);
+  }, [tickets, toast]);
 
   /**
    * Update any ticket fields and refresh the local list.
@@ -103,13 +141,27 @@ export function useTickets(filters: TicketFilters = {}): UseTicketsReturn {
   }, []);
 
   /**
-   * Delete a ticket and remove it from the local list.
+   * Optimistically remove the ticket from the local list, then call the API.
+   * If the API call fails, the previous list is restored (rollback).
    */
   const deleteTicket = useCallback(async (ticketId: string) => {
-    await api.delete(`/tickets/${ticketId}`);
+    const snapshot = tickets;
     setTickets((prev) => prev.filter((t) => t.id !== ticketId));
     setTotal((n) => n - 1);
-  }, []);
+
+    try {
+      await api.delete(`/tickets/${ticketId}`);
+    } catch (err) {
+      setTickets(snapshot);
+      setTotal((n) => n + 1);
+      toast({
+        variant: "destructive",
+        title: "Deletion Failed",
+        description: "Could not delete ticket. Please check your connection and try again.",
+      });
+      throw err;
+    }
+  }, [tickets, toast]);
 
   return { tickets, total, isLoading, error, refetch, updateTicketStatus, updateTicket, deleteTicket };
 }

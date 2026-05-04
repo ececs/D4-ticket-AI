@@ -1,38 +1,138 @@
 """
-Ticket service — reusable business logic for the AI agent.
+Ticket Service Module.
 
-The API routers handle HTTP concerns (parsing requests, returning responses).
-This service layer encapsulates ticket operations that can be called from
-both the HTTP router and the LangGraph AI agent tools.
+This service encapsulates the core business logic for ticket management. 
+By centralizing these operations, we ensure that both the REST API and the 
+AI Agent follow the same rules, validation, and notification triggers.
 
-This avoids duplicating database logic: the AI agent uses the same
-validated, notification-aware functions as the REST API.
-
-All functions receive an AsyncSession and the acting user, ensuring that
-the AI agent can only perform actions the user is authorized to do.
+Architecture (Senior Pattern):
+- Decoupling: This service returns Pydantic schemas (`TicketOut`) instead of 
+  SQLAlchemy models. This prevents "Lazy Loading" errors and ensures that the 
+  calling layer (API or AI) cannot accidentally modify the database state 
+  without going through the service.
+- Atomicity: All write operations handle their own commits and flushes 
+  within the provided transaction context.
 """
 
 import uuid
+from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.models.ticket import Ticket, TicketStatus, TicketPriority
 from app.models.user import User
-from app.services import notification_service
+from app.schemas.ticket import TicketOut
+import asyncio
+import logging
+from . import notification_service, embedding_service, scraping_service, cache_service
 
 
-async def get_ticket(db: AsyncSession, ticket_id: uuid.UUID) -> Ticket | None:
-    """Fetch a single ticket with its author and assignee relationships loaded."""
+async def get_ticket(db: AsyncSession, ticket_id: uuid.UUID) -> Optional[TicketOut]:
+    """
+    Retrieves a single ticket by its UUID with all relations eagerly loaded.
+
+    Args:
+        db: Asynchronous database session.
+        ticket_id: The unique identifier of the ticket.
+
+    Returns:
+        Optional[TicketOut]: A validated Pydantic model of the ticket, 
+            or None if not found.
+    """
     result = await db.execute(
         select(Ticket)
         .options(
-            selectinload(Ticket.author),   # type: ignore[attr-defined]
-            selectinload(Ticket.assignee), # type: ignore[attr-defined]
+            selectinload(Ticket.author),    # type: ignore[attr-defined]
+            selectinload(Ticket.assignee),  # type: ignore[attr-defined]
         )
         .where(Ticket.id == ticket_id)
     )
-    return result.scalar_one_or_none()
+    ticket = result.scalar_one_or_none()
+    
+    if not ticket:
+        return None
+        
+    return TicketOut.model_validate(ticket)
+    
+    
+async def create_ticket(
+    db: AsyncSession,
+    title: str,
+    description: Optional[str],
+    priority: TicketPriority,
+    author_id: uuid.UUID,
+    assignee_id: Optional[uuid.UUID] = None,
+    client_url: Optional[str] = None,
+    client_summary: Optional[str] = None,
+) -> TicketOut:
+    """
+    Creates a new ticket and notifies the system.
+    """
+    # 1. Create model
+    ticket = Ticket(
+        title=title,
+        description=description,
+        priority=priority,
+        author_id=author_id,
+        assignee_id=assignee_id,
+        client_url=client_url,
+        client_summary=client_summary,
+    )
+    db.add(ticket)
+    await db.flush() # Get the ID for notifications
+    
+    # 2. Fetch author for notification
+    author_result = await db.execute(select(User).where(User.id == author_id))
+    author = author_result.scalar_one()
+
+    # 3. Finalize
+    await db.commit()
+
+    # 4. Handle side effects (Notifications) after commit
+    from app.schemas.websocket import WSMessageType
+    await notification_service.notify_ticket_created(db, ticket=ticket, actor=author)
+    await notification_service.broadcast_global_event(
+        type=WSMessageType.TICKET_CREATED,
+        data={"id": str(ticket.id), "title": ticket.title},
+        db=db
+    )
+    await db.commit()  # persist notification records created by the service
+    await cache_service.cache_invalidate_prefix("tickets:")
+
+    # 5. Background tasks
+    asyncio.create_task(generate_ticket_embedding_task(ticket.id, title, description))
+    if client_url:
+        asyncio.create_task(scraping_service.scrape_and_index_url(ticket.id, client_url))
+        
+    # 5. Return decoupled schema
+    return await get_ticket(db, ticket.id) # type: ignore
+
+
+async def generate_ticket_embedding_task(ticket_id: uuid.UUID, title: str, description: Optional[str]) -> None:
+    """
+    Background task to generate and persist ticket embedding.
+    
+    Uses a dedicated session factory to ensure isolation from the request lifecycle.
+    """
+    embedding = await embedding_service.generate_ticket_embedding(title, description)
+    if embedding is None:
+        return
+
+    try:
+        from app.db.session import async_session_factory
+        async with async_session_factory() as session:
+            result = await session.execute(select(Ticket).where(Ticket.id == ticket_id))
+            ticket = result.scalar_one_or_none()
+            if ticket:
+                ticket.embedding = embedding
+                await session.commit()
+                logging.getLogger(__name__).info(f"Ticket Service: Persistent embedding for ticket {ticket_id}")
+    except Exception as exc:
+        logging.getLogger(__name__).error(
+            f"Ticket Service: Failed to persist embedding for {ticket_id}: {str(exc)}", 
+            exc_info=True
+        )
 
 
 async def change_status(
@@ -40,52 +140,79 @@ async def change_status(
     ticket_id: uuid.UUID,
     new_status: TicketStatus,
     actor: User,
-) -> Ticket | None:
+) -> Optional[TicketOut]:
     """
-    Change a ticket's status and notify relevant users.
+    Transitions a ticket to a new workflow status and triggers notifications.
 
-    Used by both PATCH /tickets/{id} and the AI agent's change_status tool.
+    Args:
+        db: Database session.
+        ticket_id: UUID of the target ticket.
+        new_status: The target TicketStatus enum value.
+        actor: The user performing the action (for auditing and notifications).
 
-    Returns the updated ticket, or None if the ticket was not found.
+    Returns:
+        Optional[TicketOut]: The updated ticket schema, or None if not found.
     """
+    # 1. Fetch the "live" model from the session
     result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
     ticket = result.scalar_one_or_none()
+    
     if not ticket:
         return None
 
+    # 2. Apply business logic
     old_status = ticket.status
     ticket.status = new_status
-    await db.flush()
-
+    
+    # 4. Persist changes
+    await db.commit()
+    
+    # 5. Handle side effects (Notifications) after commit
+    # This avoids race conditions where the frontend refreshes before the commit is finished
     if new_status != old_status:
         await notification_service.notify_status_changed(
             db, ticket=ticket, actor=actor, new_status=new_status.value
         )
+        await notification_service.notify_ticket_updated(db, ticket=ticket, actor=actor)
+        await db.commit()  # persist notification records
+        await cache_service.cache_invalidate_prefix("tickets:")
 
-    await db.commit()
+    # 6. Return a clean, decoupled Pydantic object
     return await get_ticket(db, ticket_id)
 
 
 async def reassign(
     db: AsyncSession,
     ticket_id: uuid.UUID,
-    assignee_id: uuid.UUID | None,
+    assignee_id: Optional[uuid.UUID],
     actor: User,
-) -> Ticket | None:
+) -> Optional[TicketOut]:
     """
-    Reassign a ticket to a different user (or unassign with assignee_id=None).
+    Changes the assigned user for a ticket and notifies the new assignee.
 
-    Notifies the new assignee if one is set and it's not the actor themselves.
-    Returns the updated ticket, or None if the ticket was not found.
+    Args:
+        db: Database session.
+        ticket_id: UUID of the ticket.
+        assignee_id: UUID of the new user, or None to unassign.
+        actor: The user performing the change.
+
+    Returns:
+        Optional[TicketOut]: The updated ticket schema.
     """
+    # 1. Fetch the model
     result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
     ticket = result.scalar_one_or_none()
+    
     if not ticket:
         return None
 
+    # 2. Update field
     ticket.assignee_id = assignee_id
-    await db.flush()
 
+    # 4. Persist
+    await db.commit()
+
+    # 5. Notify after commit if a new assignee is provided
     if assignee_id:
         assignee_result = await db.execute(select(User).where(User.id == assignee_id))
         new_assignee = assignee_result.scalar_one_or_none()
@@ -93,6 +220,68 @@ async def reassign(
             await notification_service.notify_ticket_assigned(
                 db, ticket=ticket, assignee=new_assignee, actor=actor
             )
+        await db.commit()  # persist notification records
+        await cache_service.cache_invalidate_prefix("tickets:")
 
+    # 6. Return decoupled schema
+    return await get_ticket(db, ticket_id)
+
+
+async def update_ticket(
+    db: AsyncSession,
+    ticket_id: uuid.UUID,
+    update_data: dict,
+    actor: User,
+) -> Optional[TicketOut]:
+    """
+    Generalized update for any ticket field.
+    """
+    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = result.scalar_one_or_none()
+    
+    if not ticket:
+        return None
+
+    old_status = ticket.status
+    old_assignee_id = ticket.assignee_id
+
+    # Apply updates
+    for key, value in update_data.items():
+        if hasattr(ticket, key):
+            setattr(ticket, key, value)
+    
+    await db.flush()
+
+    # 5. Persist
     await db.commit()
+
+    # 6. Side effects (Notifications) after commit
+    if "status" in update_data and update_data["status"] != old_status:
+        await notification_service.notify_status_changed(
+            db, ticket=ticket, actor=actor, new_status=update_data["status"]
+        )
+
+    if "assignee_id" in update_data and update_data["assignee_id"] != old_assignee_id:
+        if update_data["assignee_id"]:
+            res = await db.execute(select(User).where(User.id == update_data["assignee_id"]))
+            new_assignee = res.scalar_one_or_none()
+            if new_assignee:
+                await notification_service.notify_ticket_assigned(
+                    db, ticket=ticket, assignee=new_assignee, actor=actor
+                )
+        
+    # Generic update notification to trigger UI refreshes
+    await notification_service.notify_ticket_updated(db, ticket=ticket, actor=actor)
+    await db.commit()  # persist notification records
+    await cache_service.cache_invalidate_prefix("tickets:")
+
+    # --- Side effects (Background Tasks) ---
+    if "title" in update_data or "description" in update_data:
+        new_title = update_data.get("title", ticket.title)
+        new_desc = update_data.get("description", ticket.description)
+        asyncio.create_task(generate_ticket_embedding_task(ticket_id, new_title, new_desc))
+
+    if "client_url" in update_data and update_data["client_url"]:
+        asyncio.create_task(scraping_service.scrape_and_index_url(ticket_id, update_data["client_url"]))
+
     return await get_ticket(db, ticket_id)

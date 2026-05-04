@@ -1,33 +1,16 @@
 """
 WebSocket endpoint for real-time notifications.
-
-Clients connect to /ws after authenticating. The connection stays open
-for the duration of the browser session. When a relevant database event
-occurs (ticket assigned, comment added, status changed), the WebSocket
-manager pushes the notification payload to the client without polling.
-
-Authentication: the JWT token is sent as a query parameter (?token=...)
-because browsers don't support custom headers in native WebSocket connections.
-
-Flow:
-  1. Frontend connects: ws://localhost:8000/ws?token=<jwt>
-  2. Server validates token, registers connection in WebSocketManager.
-  3. Server sends pending unread notifications immediately on connect.
-  4. Server listens for disconnect; cleans up on close.
 """
 
 import asyncio
-
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_access_token
 from app.core.websocket_manager import manager
 from app.db.session import AsyncSessionLocal
 from app.models.user import User
-from app.models.notification import Notification
-from app.schemas.notification import NotificationOut
+from app.services import notification_service
 
 router = APIRouter(tags=["WebSocket"])
 
@@ -35,58 +18,52 @@ router = APIRouter(tags=["WebSocket"])
 @router.websocket("/ws")
 async def websocket_endpoint(
     websocket: WebSocket,
-    token: str = Query(..., description="JWT access token for authentication"),
+    token: str = Query(..., description="JWT access token"),
 ):
     """
-    Establish a persistent WebSocket connection for the authenticated user.
-
-    On connection:
-      - Validates the JWT token.
-      - Registers the connection in the WebSocketManager.
-      - Sends all unread notifications so the badge count is accurate immediately.
-
-    During connection:
-      - Waits for disconnect (no messages expected from client in this version).
-
-    On disconnect:
-      - Removes the connection from the manager.
+    Establish a persistent WebSocket connection.
     """
-    # Validate the token before accepting the connection
     user_id = decode_access_token(token)
     if not user_id:
-        await websocket.close(code=4001)  # Custom code: unauthorized
+        await websocket.close(code=4001)
         return
 
-    # Verify user exists in the database
     async with AsyncSessionLocal() as db:
+        # Verify user
         result = await db.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         if not user:
             await websocket.close(code=4001)
             return
 
-        # Accept connection and register it with the manager
         await manager.connect(websocket, user.id)
 
-        # Send unread notifications so the badge count is correct immediately on connect
-        unread = await db.execute(
-            select(Notification)
-            .where(Notification.user_id == user.id, Notification.read == False)
-            .order_by(Notification.created_at.desc())
-            .limit(50)
+        from app.schemas.websocket import WSMessage, WSMessageType
+        
+        # Send initial state (unread count)
+        unread_count = await notification_service.get_unread_count(db, user.id)
+        msg = WSMessage(
+            type=WSMessageType.SYSTEM_ALERT,
+            data={"unread_count": unread_count},
+            message="Estado inicial cargado"
         )
-        notifications = unread.scalars().all()
+        await websocket.send_text(msg.model_dump_json())
+
+        # Send unread notifications list
+        notifications = await notification_service.list_unread_notifications(db, user.id)
         for notif in notifications:
-            out = NotificationOut.model_validate(notif)
-            await websocket.send_text(out.model_dump_json())
+            # We must send it in the same format as the real-time events
+            notif_msg = WSMessage(
+                type=WSMessageType.NOTIFICATION,
+                ticket_id=notif.ticket_id,
+                data=notif.model_dump(mode="json")
+            )
+            await websocket.send_text(notif_msg.model_dump_json())
 
     try:
-        # Keep the connection alive with periodic pings.
-        # Railway (and most reverse proxies) close idle WebSocket connections
-        # after ~60 s. Sending a ping every 30 s prevents that.
         while True:
             try:
-                # Wait up to 30 s for a client message; if nothing arrives, send a ping
+                # Keep-alive loop
                 await asyncio.wait_for(websocket.receive_text(), timeout=30)
             except asyncio.TimeoutError:
                 await websocket.send_text('{"type":"ping"}')

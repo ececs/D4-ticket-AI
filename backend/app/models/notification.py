@@ -24,6 +24,8 @@ class NotificationType(str, enum.Enum):
     assigned = "assigned"          # A ticket was assigned/reassigned to the user
     commented = "commented"        # A new comment was added to a ticket the user is involved in
     status_changed = "status_changed"  # A ticket's status changed
+    ticket_updated = "ticket_updated"  # A ticket was modified (priority, title, etc)
+    ticket_deleted = "ticket_deleted"  # A ticket was permanently deleted
 
 
 class Notification(Base):
@@ -38,9 +40,11 @@ class Notification(Base):
         SAEnum(NotificationType, name="notification_type"), nullable=False
     )
 
-    # CASCADE: when a ticket is deleted, its notifications are also deleted
-    ticket_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("tickets.id", ondelete="CASCADE"), nullable=False
+    # SET NULL: when a ticket is deleted, existing notifications keep their history
+    # but lose the FK link. nullable=True supports "ticket_deleted" notifications
+    # that are created after the ticket row is already gone.
+    ticket_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("tickets.id", ondelete="SET NULL"), nullable=True
     )
 
     # Human-readable message shown in the notifications panel

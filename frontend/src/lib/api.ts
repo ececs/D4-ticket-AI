@@ -11,10 +11,12 @@
  */
 
 import axios from "axios";
+import { getAuthToken } from "./auth";
 
 const api = axios.create({
   baseURL: `${process.env.NEXT_PUBLIC_API_URL}/api/v1`,
   withCredentials: true,
+  timeout: 10000,
   headers: {
     "Content-Type": "application/json",
   },
@@ -23,10 +25,11 @@ const api = axios.create({
 // Request interceptor: read the JWT from the frontend-domain cookie and attach
 // it as Authorization: Bearer on every outbound API request to the backend.
 api.interceptors.request.use((config) => {
-  if (typeof document !== "undefined") {
-    const match = document.cookie.match(/(?:^|;\s*)access_token=([^;]+)/);
-    if (match) {
-      config.headers.Authorization = `Bearer ${decodeURIComponent(match[1])}`;
+  const token = getAuthToken();
+  if (token) {
+    // Direct assignment is safer for cross-version compatibility
+    if (config.headers) {
+      config.headers["Authorization"] = `Bearer ${token}`;
     }
   }
   return config;

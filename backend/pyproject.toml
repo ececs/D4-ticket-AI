@@ -20,6 +20,8 @@ dependencies = [
     "langgraph>=0.2.0",
     "langchain-google-genai>=2.0.0",
     "langchain-anthropic>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "openai>=1.50.0",
     "langchain-core>=0.3.0",
     "langgraph-checkpoint-postgres>=2.0.21",
     "psycopg[binary]>=3.1.0",
@@ -29,6 +31,7 @@ dependencies = [
     "redis>=7.4.0",
     "google-generativeai>=0.8.0",
     "google-genai>=1.0.0",
+    "greenlet>=3.1.1",
 ]
 
 [project.optional-dependencies]
@@ -42,6 +45,11 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+filterwarnings = [
+    "ignore::pydantic.warnings.PydanticDeprecatedSince20",
+    "ignore::DeprecationWarning:fastapi",
+    "ignore:.*AgentStatePydantic.*:langgraph.errors.LangGraphDeprecatedSinceV10",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]

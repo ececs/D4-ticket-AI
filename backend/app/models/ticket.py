@@ -28,7 +28,8 @@ from app.db.base import Base
 
 try:
     from pgvector.sqlalchemy import Vector as _Vector
-    _EMBEDDING_TYPE = _Vector(1536)
+    # Synchronized with migration 9bc21880aaa1 (768 dims) for HNSW RAM efficiency.
+    _EMBEDDING_TYPE = _Vector(768)
 except ImportError:
     # Fallback for environments without pgvector (e.g. CI without the extension)
     from sqlalchemy import LargeBinary
@@ -86,6 +87,9 @@ class Ticket(Base):
 
     author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     assignee_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    client_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    client_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Semantic search — 768-dim embedding of title + description.
     # Generated asynchronously on create/update; NULL until first embedding run.

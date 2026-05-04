@@ -17,6 +17,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.knowledge_chunk import KnowledgeChunk
+from app.schemas.knowledge import IngestResponse
 from app.services.embedding_service import generate_embedding
 
 logger = logging.getLogger(__name__)
@@ -106,15 +107,13 @@ async def ingest_url(db: AsyncSession, url: str) -> dict:
     await db.commit()
 
     logger.info("Ingested %d chunks from %s", len(rows), url)
-    return {"url": url, "chunks_created": len(rows)}
+    return IngestResponse(url=url, chunks_created=len(rows))
 
 
-async def search(db: AsyncSession, query: str, k: int = 5) -> list[str]:
+async def search(db: AsyncSession, query: str, k: int = 5, ticket_id: Optional[str] = None) -> list[str]:
     """
     Return the top-k knowledge chunks most relevant to `query`.
-
-    Uses cosine similarity if embeddings are available; falls back to
-    ILIKE substring match otherwise.
+    If ticket_id is provided, prioritizes or limits to chunks linked to that ticket.
     """
     query_embedding = await generate_embedding(query, task_type="RETRIEVAL_QUERY")
 
@@ -122,16 +121,23 @@ async def search(db: AsyncSession, query: str, k: int = 5) -> list[str]:
         stmt = (
             select(KnowledgeChunk)
             .where(KnowledgeChunk.embedding.isnot(None))  # type: ignore[attr-defined]
-            .order_by(KnowledgeChunk.embedding.cosine_distance(query_embedding))  # type: ignore[attr-defined]
-            .limit(k)
         )
+        # If we have a ticket_id, we search specifically for chunks with that chunk_metadata
+        # or we could do a union. For simplicity and precision, if ticket_id is provided,
+        # we look for those first.
+        if ticket_id:
+            from sqlalchemy import func
+            stmt = stmt.where(func.json_extract_path_text(KnowledgeChunk.chunk_metadata, "ticket_id") == str(ticket_id))
+            
+        stmt = stmt.order_by(KnowledgeChunk.embedding.cosine_distance(query_embedding))  # type: ignore[attr-defined]
+        stmt = stmt.limit(k)
     else:
         pattern = f"%{query}%"
-        stmt = (
-            select(KnowledgeChunk)
-            .where(KnowledgeChunk.content.ilike(pattern))
-            .limit(k)
-        )
+        stmt = select(KnowledgeChunk).where(KnowledgeChunk.content.ilike(pattern))
+        if ticket_id:
+            from sqlalchemy import func
+            stmt = stmt.where(func.json_extract_path_text(KnowledgeChunk.chunk_metadata, "ticket_id") == str(ticket_id))
+        stmt = stmt.limit(k)
 
     result = await db.execute(stmt)
     return [row.content for row in result.scalars().all()]

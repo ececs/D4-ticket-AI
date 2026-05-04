@@ -1,0 +1,10 @@
+{
+  "name": "d4-ticket-ai",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "lint": "npm --prefix frontend run lint",
+    "install": "npm --prefix frontend install"
+  }
+}

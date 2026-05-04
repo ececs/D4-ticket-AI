@@ -40,7 +40,7 @@
 3. Copy the key — you'll set it as `GOOGLE_API_KEY` in Railway
 
 > **Free tier:** 500 requests/day with Gemini 2.5 Flash — more than enough for a demo.
-> **Fallback:** Set `AI_PROVIDER=anthropic` and add `ANTHROPIC_API_KEY` to use Claude Haiku instead.
+> **Failover:** Set `AI_PROVIDER=openai` and add `OPENAI_API_KEY` to use GPT-4o-mini as a high-availability fallback.
 
 ---
 
@@ -108,7 +108,7 @@ In your Railway backend service → **Variables** tab, add:
 | `AI_PROVIDER` | `google` |
 | `AI_MODEL` | `gemini-2.5-flash` |
 | `GOOGLE_API_KEY` | From Step 2 |
-| `ANTHROPIC_API_KEY` | *(optional, only if AI_PROVIDER=anthropic)* |
+| `OPENAI_API_KEY` | *(optional, only if AI_PROVIDER=openai)* |
 
 ### 4.4 Deploy
 
@@ -197,7 +197,7 @@ Open your Vercel URL and run through this checklist:
 ### AI chat returns "Error"
 - Confirm `GOOGLE_API_KEY` is set in Railway and is a valid AI Studio key
 - Check Railway logs: `railway logs` — look for LangGraph or API errors
-- Switch to Claude: set `AI_PROVIDER=anthropic`, `AI_MODEL=claude-haiku-4-5-20251001`, add `ANTHROPIC_API_KEY`
+- Switch to OpenAI: set `AI_PROVIDER=openai`, `AI_MODEL=gpt-4o-mini`, add `OPENAI_API_KEY`
 
 ### Notifications / WebSocket not connecting
 - Browser console: check for `ws://` vs `wss://` — production must use `wss://`
