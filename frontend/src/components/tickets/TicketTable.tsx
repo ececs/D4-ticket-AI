@@ -19,7 +19,7 @@ import { Ticket, TicketFilters, TicketPriority, TicketStatus } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { STATUS_LABELS, PRIORITY_CONFIG, timeAgo } from "@/lib/utils";
+import { STATUS_LABELS, PRIORITY_CONFIG, timeAgo, formatDateTime } from "@/lib/utils";
 import { ChevronUp, ChevronDown, ChevronsUpDown, Trash2, ExternalLink, CheckSquare, Square, ClipboardList, SearchX } from "lucide-react";
 import { useSelectionStore } from "@/stores/useSelectionStore";
 
@@ -298,7 +298,8 @@ export function TicketTable({
 
                   {/* Created at */}
                   <td className="px-4 py-3 hidden lg:table-cell text-slate-500">
-                    {timeAgo(ticket.created_at)}
+                    <span>{formatDateTime(ticket.created_at)}</span>
+                    <span className="block text-xs text-slate-400">{timeAgo(ticket.created_at)}</span>
                   </td>
 
                   {/* Actions */}
