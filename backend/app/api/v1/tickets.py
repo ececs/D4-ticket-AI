@@ -199,12 +199,19 @@ async def delete_ticket(ticket_id: uuid.UUID, db: DB, current_user: CurrentUser)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
+    if ticket.author_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el autor puede eliminar este ticket."
+        )
+
     title = ticket.title
 
-    # Create a PERSISTENT notification before deleting
-    await notification_service.notify_ticket_deleted(db, ticket_id, title, current_user)
-
     await db.delete(ticket)
+    await db.commit()
+
+    # Notify after commit so the ticket_id FK is already gone
+    await notification_service.notify_ticket_deleted(db, ticket_id, title, current_user)
     await db.commit()
     
     # Broadcast deletion for real-time UI sync (Global)

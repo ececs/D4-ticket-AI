@@ -23,7 +23,6 @@ from typing import Optional, List, Type
 from pydantic import BaseModel, Field
 
 from langchain_core.tools import tool
-from langgraph.types import interrupt
 from sqlalchemy import select, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -289,14 +288,25 @@ def make_tools(db: AsyncSession, actor: User) -> List:
     @tool(args_schema=DeleteTicketSchema)
     async def delete_ticket(ticket_id: str) -> str:
         """
-        Request deletion of a ticket. This does NOT delete immediately.
-        It returns a confirmation request that the UI will handle.
-        The actual deletion only happens if the user confirms in the interface.
+        Request permanent deletion of a ticket. Always pauses for human approval
+        before anything is deleted — the UI shows a confirmation dialog.
         """
-        # We don't query the DB here to avoid session issues.
-        # The actual existence check and deletion are handled by the frontend
-        # calling the REST DELETE endpoint after user confirmation.
-        return f"__DELETE_REQUESTED__:{ticket_id}:this ticket"
+        async with lock:
+            try:
+                tid = uuid.UUID(ticket_id)
+                result = await db.execute(select(Ticket).where(Ticket.id == tid))
+                ticket = result.scalar_one_or_none()
+                if not ticket:
+                    return "Ticket not found."
+                title = ticket.title
+            except ValueError:
+                return f"Invalid ticket ID: {ticket_id}"
+            except Exception as e:
+                return f"Error: {e}"
+
+        # Return the marker with the real title — the router intercepts this
+        # and sends a 'confirmation_required' SSE event to the frontend.
+        return f"__DELETE_REQUESTED__:{ticket_id}:{title}"
 
     return [
         query_tickets, 

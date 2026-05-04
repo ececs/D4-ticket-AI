@@ -62,6 +62,11 @@ class WebSocketManager:
             if not self.connections[key]:
                 del self.connections[key]
 
+    async def broadcast_to_all(self, data: dict | WSMessage) -> None:
+        """Send a payload to every connected user (global broadcast)."""
+        for user_id in list(self.connections.keys()):
+            await self.broadcast_to_user(user_id, data)
+
     async def broadcast_to_user(self, user_id: str, data: dict | WSMessage) -> None:
         """
         Send a payload to all active connections for a specific user.
