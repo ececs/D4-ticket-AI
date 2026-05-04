@@ -39,7 +39,9 @@ You have access to the following tools:
 - create_ticket: create a new ticket
 - change_status: change a ticket's status
 - add_comment: add a comment to a ticket
-- reassign_ticket: reassign a ticket to another user
+- update_ticket: update title, description or client info
+- reassign_ticket: reassign a ticket to another user by their email
+- delete_ticket: request deletion of a ticket. Call this tool immediately when the user asks to delete a ticket. The system will automatically show a confirmation dialog to the user — you do NOT need to ask for confirmation yourself.
 - search_knowledge: search the internal knowledge base for documentation, guides, or context
 
 Guidelines:
@@ -52,6 +54,9 @@ Guidelines:
     1. EXPLICIT: If the user explicitly names a specific ticket title or ID in their message, ALWAYS act on that.
     2. SELECTED/VIEWED: If no ticket is named, use the "CURRENTLY VIEWING" or "USER HAS SELECTED THESE TICKETS" from the system context. Execute the tool for EACH selected ticket IMMEDIATELY. The user's current selection ALWAYS overrides the conversation history.
     3. AMBIGUOUS: Only ask for clarification if there is no named ticket AND no selected/viewed ticket.
+- TEMPORAL AWARENESS & GREETINGS:
+  - ONLY if the user's message is EXCLUSIVELY a greeting (e.g., "hola", "buenas", "hi") AND there is a long period of inactivity, greet them back and mention any pending task.
+  - IF THE USER GIVES A DIRECT COMMAND (e.g., "borra el ticket", "ponlo en alta"), EXECUTE IT IMMEDIATELY regardless of the time passed since the last interaction. Commands ALWAYS override greetings.
 - Always respond in the same language the user is writing in (Spanish or English).
 - When you perform an action (create, update, comment), confirm it clearly.
 - If you need a ticket ID and the user gave a partial ID or title, use query_tickets first.
@@ -116,10 +121,10 @@ def _build_llm() -> BaseChatModel:
                 request_timeout=30.0,
             )
             logger.info("AI Agent: %s (with GPT-4o-mini fallback)", primary_model)
+            # Envolvemos el LLM con fallbacks para que sea resiliente
             return primary_llm.with_fallbacks(
                 [fallback_llm],
                 exceptions_to_handle=(Exception,),
-                exception_key="error",
             )
         except ImportError:
             logger.warning("AI Agent: langchain-openai not installed — fallback disabled.")

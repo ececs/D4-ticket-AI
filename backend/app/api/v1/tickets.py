@@ -35,6 +35,7 @@ from app.schemas.ticket import TicketCreate, TicketListResponse, TicketOut, Tick
 from app.services.cache_service import cache_get, cache_set, cache_invalidate_prefix
 from app.services.embedding_service import generate_embedding, generate_ticket_embedding
 from app.services import ticket_service, notification_service, ai_copilot_service, scraping_service
+from app.schemas.websocket import WSMessageType
 from app.models.knowledge_chunk import KnowledgeChunk
 
 CACHE_PREFIX = "tickets:"
@@ -198,16 +199,21 @@ async def delete_ticket(ticket_id: uuid.UUID, db: DB, current_user: CurrentUser)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    # --- Authorization Check ---
-    # Only the author can delete the ticket
-    if ticket.author_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo el autor puede eliminar este ticket."
-        )
+    title = ticket.title
+
+    # Create a PERSISTENT notification before deleting
+    await notification_service.notify_ticket_deleted(db, ticket_id, title, current_user)
 
     await db.delete(ticket)
     await db.commit()
+    
+    # Broadcast deletion for real-time UI sync (Global)
+    await notification_service.broadcast_global_event(
+        type=WSMessageType.TICKET_DELETED, 
+        data={"id": str(ticket_id), "title": title},
+        db=db
+    )
+    
     await cache_invalidate_prefix(CACHE_PREFIX)
 
 

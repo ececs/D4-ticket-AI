@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * DashboardHeader — top navigation bar for all authenticated pages.
  *
@@ -14,8 +16,6 @@
  * Next.js server to this component as a plain string prop).
  */
 
-"use client";
-
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -26,6 +26,7 @@ import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { useNotifications } from "@/hooks/useNotifications";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { ChatSidebar } from "@/components/ai-chat/ChatSidebar";
+import { useUIStore } from "@/hooks/useUIStore";
 import api from "@/lib/api";
 
 interface DashboardHeaderProps {
@@ -37,7 +38,7 @@ export function DashboardHeader({ token }: DashboardHeaderProps) {
   const router = useRouter();
   const { user } = useAuthStore();
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
+  const { isChatOpen: chatOpen, setChatOpen } = useUIStore();
 
   // Initialise real-time connection — safe to call unconditionally (hook handles null token)
   useWebSocket(token);
@@ -73,7 +74,7 @@ export function DashboardHeader({ token }: DashboardHeaderProps) {
         <div className="flex items-center gap-2">
           {/* AI Chat toggle */}
           <button
-            onClick={() => setChatOpen((o) => !o)}
+            onClick={() => setChatOpen(!chatOpen)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               chatOpen
                 ? "bg-blue-600 text-white"

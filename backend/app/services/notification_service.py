@@ -136,6 +136,25 @@ async def notify_ticket_created(
         )
 
 
+async def notify_ticket_deleted(
+    db: AsyncSession,
+    ticket_id: uuid.UUID,
+    ticket_title: str,
+    actor: User,
+) -> None:
+    """
+    Notify the actor that the ticket has been deleted.
+    Provides a persistent notification record in the history.
+    """
+    await _create_notification(
+        db,
+        user_id=actor.id,
+        notification_type=NotificationType.status_changed, # Using a generic type
+        ticket_id=None, # Ticket is gone, so no link
+        message=f'Ticket "{ticket_title}" ha sido eliminado por {actor.name}.',
+    )
+
+
 async def notify_ticket_assigned(
     db: AsyncSession,
     ticket: Ticket,
@@ -209,6 +228,37 @@ async def notify_status_changed(
         )
 
 
+async def broadcast_global_event(
+    type: WSMessageType,
+    data: Optional[Dict[str, Any]] = None,
+    db: Optional[AsyncSession] = None
+) -> None:
+    """
+    Push a real-time event to ALL connected users.
+    Useful for things like "A new ticket was created" where everyone's board should refresh.
+    """
+    from app.schemas.websocket import WSMessage
+    
+    ws_msg = WSMessage(
+        type=type,
+        data=data
+    )
+    
+    event = ws_msg.model_dump(mode="json")
+    # user_id = None or "*" indicates global broadcast in the websocket manager
+    event["user_id"] = "*"
+    
+    logger.info(f"🌐 Global broadcast: type={type.value}")
+    
+    from app.services import pubsub_service
+    if pubsub_service.is_redis_available():
+        await pubsub_service.publish(event)
+    elif db is not None:
+        await _pg_notify(db, "*", event)
+    else:
+        logger.warning("Global update skipped: No Redis and no DB session provided.")
+
+
 async def broadcast_live_update(
     user_id: uuid.UUID,
     ticket_id: uuid.UUID,
@@ -249,21 +299,19 @@ async def notify_ticket_updated(
     actor: User,
 ) -> None:
     """
-    Notify author and assignee that a ticket has been updated.
-    This is LIVE-ONLY to avoid DB clutter, but ensures UI sync.
+    Broadcast a global real-time update event.
+    This ensures all connected users see the change in their UI (Kanban/List).
     """
-    users_to_notify = {ticket.author_id, actor.id}
-    if ticket.assignee_id:
-        users_to_notify.add(ticket.assignee_id)
-
-    for user_id in users_to_notify:
-        # We don't use _create_notification here because we don't want a DB record
-        await broadcast_live_update(
-            user_id=user_id,
-            ticket_id=ticket.id,
-            message=f'Ticket "{ticket.title}" actualizado por {actor.name}',
-            db=db
-        )
+    await broadcast_global_event(
+        type=WSMessageType.TICKET_UPDATED,
+        data={
+            "id": str(ticket.id), 
+            "title": ticket.title,
+            "status": ticket.status.value,
+            "priority": ticket.priority.value
+        },
+        db=db
+    )
 
 
 async def list_notifications(

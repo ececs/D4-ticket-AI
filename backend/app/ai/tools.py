@@ -11,13 +11,9 @@ Available Tools:
 - create_ticket: create a new support ticket.
 - change_status: transition a ticket between workflow states.
 - add_comment: append a message to a ticket thread.
-- reassign_ticket: change the assigned user for a ticket.
+- update_ticket: update any field in a ticket (priority, title, etc.).
 - search_knowledge: query the semantic knowledge base (RAG).
-
-Architecture:
-- Args Schemas: Pydantic models that define the input contract for each tool.
-- Tool Factory: Closure-based injection of DB sessions and authenticated users.
-- Type Safety: Uses TicketStatus and TicketPriority Enums for strict validation.
+- delete_ticket: permanently remove a ticket (requires interrupt).
 """
 
 import uuid
@@ -27,6 +23,7 @@ from typing import Optional, List, Type
 from pydantic import BaseModel, Field
 
 from langchain_core.tools import tool
+from langgraph.types import interrupt
 from sqlalchemy import select, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -56,6 +53,10 @@ class CreateTicketSchema(BaseModel):
     client_url: Optional[str] = Field(None, description="Client's website URL for analysis")
     client_summary: Optional[str] = Field(None, description="Brief summary of who the client is and what they do")
 
+class ReassignTicketSchema(BaseModel):
+    ticket_id: str = Field(..., description="UUID of the ticket")
+    assignee_email: str = Field(..., description="Email of the user to assign, or 'unassign' to clear")
+
 class ChangeStatusSchema(BaseModel):
     ticket_id: str = Field(..., description="UUID of the ticket")
     new_status: str = Field(..., description="New state: open, in_progress, in_review, closed")
@@ -79,6 +80,9 @@ class SearchKnowledgeSchema(BaseModel):
 
 class AIDiagnoseSchema(BaseModel):
     ticket_id: str = Field(..., description="UUID of the ticket to diagnose")
+
+class DeleteTicketSchema(BaseModel):
+    ticket_id: str = Field(..., description="UUID of the ticket to delete")
 
 # --- Tool Factory ---
 
@@ -207,7 +211,7 @@ def make_tools(db: AsyncSession, actor: User) -> List:
         client_url=None, 
         client_summary=None
     ) -> str:
-        """Update any ticket field, including client context (URL/Summary). Use 'unassign' for assignee to clear it."""
+        """Update any ticket field. Use 'assignee_email' to reassign, or set it to 'unassign' to clear it."""
         async with lock:
             try:
                 tid = uuid.UUID(ticket_id)
@@ -252,7 +256,6 @@ def make_tools(db: AsyncSession, actor: User) -> List:
     async def ai_diagnose_ticket(ticket_id: str) -> str:
         """
         AI Co-pilot: Generate a detailed diagnosis and suggested solution for a ticket.
-        Uses ticket context, comment history, and knowledge base (RAG).
         """
         async with lock:
             try:
@@ -263,6 +266,38 @@ def make_tools(db: AsyncSession, actor: User) -> List:
             except Exception as e:
                 return f"Error al generar diagnóstico: {e}"
 
+    @tool(args_schema=ReassignTicketSchema)
+    async def reassign_ticket(ticket_id: str, assignee_email: str) -> str:
+        """
+        Reassign a ticket to another user by their email.
+        """
+        async with lock:
+            try:
+                tid = uuid.UUID(ticket_id)
+                assignee_id = None
+                if assignee_email.lower() != "unassign":
+                    res = await db.execute(select(User).where(User.email == assignee_email))
+                    user = res.scalar_one_or_none()
+                    if not user: return f"User {assignee_email} not found."
+                    assignee_id = user.id
+
+                await ticket_service.update_ticket(db, tid, {"assignee_id": assignee_id}, actor)
+                return f"Ticket successfully reassigned to {assignee_email}."
+            except Exception as e:
+                return f"Error reassigning ticket: {e}"
+
+    @tool(args_schema=DeleteTicketSchema)
+    async def delete_ticket(ticket_id: str) -> str:
+        """
+        Request deletion of a ticket. This does NOT delete immediately.
+        It returns a confirmation request that the UI will handle.
+        The actual deletion only happens if the user confirms in the interface.
+        """
+        # We don't query the DB here to avoid session issues.
+        # The actual existence check and deletion are handled by the frontend
+        # calling the REST DELETE endpoint after user confirmation.
+        return f"__DELETE_REQUESTED__:{ticket_id}:this ticket"
+
     return [
         query_tickets, 
         get_ticket, 
@@ -270,6 +305,8 @@ def make_tools(db: AsyncSession, actor: User) -> List:
         change_status, 
         add_comment, 
         update_ticket, 
+        reassign_ticket,
         search_knowledge,
-        ai_diagnose_ticket
+        ai_diagnose_ticket,
+        delete_ticket
     ]

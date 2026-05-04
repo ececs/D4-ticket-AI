@@ -19,9 +19,11 @@ interface NotificationState {
   unreadCount: number;
   refreshSignal: number;
   lastTicketId: string | null;
+  deletedTicketId: string | null;
   addNotification: (notification: Notification, serverUnreadCount?: number) => void;
   syncUnreadCount: (count: number) => void;
   triggerRefresh: (ticketId?: string) => void;
+  triggerDelete: (ticketId: string) => void;
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
   setNotifications: (notifications: Notification[]) => void;
@@ -32,11 +34,22 @@ const useNotificationStore = create<NotificationState>((set) => ({
   unreadCount: 0,
   refreshSignal: 0,
   lastTicketId: null,
+  deletedTicketId: null,
 
   triggerRefresh: (ticketId) =>
     set((state) => ({
       refreshSignal: state.refreshSignal + 1,
-      lastTicketId: ticketId || null
+      lastTicketId: ticketId || null,
+      deletedTicketId: null
+    })),
+
+  triggerDelete: (ticketId) =>
+    set((state) => ({
+      // If we are clearing the ID, don't necessarily need to bump signal, 
+      // but if we do, useTickets logic already handles it.
+      refreshSignal: ticketId ? state.refreshSignal + 1 : state.refreshSignal,
+      deletedTicketId: ticketId || null,
+      lastTicketId: null
     })),
 
   // Sync badge count directly from the server-authoritative value

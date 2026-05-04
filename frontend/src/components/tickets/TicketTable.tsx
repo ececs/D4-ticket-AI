@@ -84,7 +84,11 @@ export function TicketTable({
     const id = pendingDeleteId;
     setPendingDeleteId(null);
     if (id) {
-      await onDeleteTicket(id);
+      try {
+        await onDeleteTicket(id);
+      } catch {
+        // deleteTicket already shows a toast and rolls back the UI on failure
+      }
     }
   };
 

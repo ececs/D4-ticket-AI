@@ -30,7 +30,7 @@ const WS_URL = process.env.NEXT_PUBLIC_API_URL?.replace("http", "ws") ?? "ws://l
 export function useWebSocket(token: string | null) {
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
-  const { addNotification, triggerRefresh, syncUnreadCount } = useNotificationStore();
+    const { addNotification, triggerRefresh, triggerDelete, syncUnreadCount } = useNotificationStore();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -52,11 +52,24 @@ export function useWebSocket(token: string | null) {
         try {
           const wsMsg = JSON.parse(event.data);
           const { type, data, ticket_id, message } = wsMsg;
+          console.debug("🔌 WS Message:", { type, ticket_id, data });
 
           // Ignore keepalive pings
           if (type === "ping") return;
 
           switch (type) {
+            case "ticket_deleted":
+            case "TICKET_DELETED": // Backwards compatibility
+              if (data && data.id) {
+                triggerDelete(String(data.id));
+              }
+              break;
+
+            case "ticket_created":
+              // Global refresh when a new ticket is added
+              triggerRefresh("*"); 
+              break;
+
             case "web_scrape_completed":
               if (ticket_id) {
                 triggerRefresh(String(ticket_id));
@@ -88,6 +101,11 @@ export function useWebSocket(token: string | null) {
             case "ticket_updated":
               if (ticket_id) {
                 triggerRefresh(String(ticket_id));
+              } else if (data && data.id) {
+                triggerRefresh(String(data.id));
+              } else {
+                // Global refresh if no specific ticket
+                triggerRefresh("*");
               }
               break;
               

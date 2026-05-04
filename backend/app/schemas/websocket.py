@@ -7,6 +7,8 @@ class WSMessageType(str, Enum):
     NOTIFICATION = "notification"
     WEB_SCRAPE_COMPLETED = "web_scrape_completed"
     TICKET_UPDATED = "ticket_updated"
+    TICKET_CREATED = "ticket_created"
+    TICKET_DELETED = "ticket_deleted"
     SYSTEM_ALERT = "system_alert"
 
 class WSMessage(BaseModel):

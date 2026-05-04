@@ -83,6 +83,8 @@ async def create_comment(
     await notification_service.notify_comment_added(
         db, ticket=ticket, commenter=author
     )
+    # Broadcaster global update to refresh UI
+    await notification_service.notify_ticket_updated(db, ticket=ticket, actor=author)
 
     # 4. Finalize
     await db.commit()

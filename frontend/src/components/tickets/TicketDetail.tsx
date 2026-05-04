@@ -107,6 +107,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
   }, [refreshSignal, lastTicketId, ticketId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchData = async (background = false) => {
+    if (!ticketId || ticketId === "None" || ticketId === "undefined") return;
     if (!background) setIsLoading(true);
     try {
       const [ticketRes, commentsRes, attachmentsRes, webCtxRes] = await Promise.all([

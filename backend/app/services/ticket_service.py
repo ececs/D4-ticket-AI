@@ -24,7 +24,8 @@ from app.models.ticket import Ticket, TicketStatus, TicketPriority
 from app.models.user import User
 from app.schemas.ticket import TicketOut
 import asyncio
-from . import notification_service, embedding_service, scraping_service
+import logging
+from . import notification_service, embedding_service, scraping_service, cache_service
 
 
 async def get_ticket(db: AsyncSession, ticket_id: uuid.UUID) -> Optional[TicketOut]:
@@ -89,8 +90,15 @@ async def create_ticket(
     await db.commit()
 
     # 4. Handle side effects (Notifications) after commit
+    from app.schemas.websocket import WSMessageType
     await notification_service.notify_ticket_created(db, ticket=ticket, actor=author)
+    await notification_service.broadcast_global_event(
+        type=WSMessageType.TICKET_CREATED,
+        data={"id": str(ticket.id), "title": ticket.title},
+        db=db
+    )
     await db.commit()  # persist notification records created by the service
+    await cache_service.cache_invalidate_prefix("tickets:")
 
     # 5. Background tasks
     asyncio.create_task(generate_ticket_embedding_task(ticket.id, title, description))
@@ -167,6 +175,7 @@ async def change_status(
         )
         await notification_service.notify_ticket_updated(db, ticket=ticket, actor=actor)
         await db.commit()  # persist notification records
+        await cache_service.cache_invalidate_prefix("tickets:")
 
     # 6. Return a clean, decoupled Pydantic object
     return await get_ticket(db, ticket_id)
@@ -212,6 +221,7 @@ async def reassign(
                 db, ticket=ticket, assignee=new_assignee, actor=actor
             )
         await db.commit()  # persist notification records
+        await cache_service.cache_invalidate_prefix("tickets:")
 
     # 6. Return decoupled schema
     return await get_ticket(db, ticket_id)
@@ -263,6 +273,7 @@ async def update_ticket(
     # Generic update notification to trigger UI refreshes
     await notification_service.notify_ticket_updated(db, ticket=ticket, actor=actor)
     await db.commit()  # persist notification records
+    await cache_service.cache_invalidate_prefix("tickets:")
 
     # --- Side effects (Background Tasks) ---
     if "title" in update_data or "description" in update_data:
