@@ -7,7 +7,7 @@
  * passed to `useTickets`, which re-fetches from the API. This keeps the dataset
  * small even when there are thousands of tickets.
  *
- * Sorting: clicking a column header updates the `sort_by`/`sort_dir` query params
+ * Sorting: clicking a column header updates the `sort_by`/`order` query params
  * sent to the API (allowed columns are validated server-side).
  */
 
@@ -62,7 +62,7 @@ export function TicketTable({
     const newDir = sortBy === field && sortDir === "desc" ? "asc" : "desc";
     setSortBy(field);
     setSortDir(newDir);
-    onFiltersChange({ ...filters, sort_by: field, sort_dir: newDir });
+    onFiltersChange({ ...filters, sort_by: field, order: newDir });
   };
 
   const { selectedTicketIds, toggleTicket, setSelection } = useSelectionStore();
