@@ -192,6 +192,13 @@ async def update_ticket(
     return updated_ticket
 
 
+@router.get("/{ticket_id}/history", summary="Get audit history for a ticket")
+async def get_ticket_history(ticket_id: uuid.UUID, db: DB, current_user: CurrentUser):
+    from app.services import history_service
+    from app.schemas.ticket_history import TicketHistoryOut
+    return await history_service.get_history(db, ticket_id)
+
+
 @router.delete("/{ticket_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a ticket")
 async def delete_ticket(ticket_id: uuid.UUID, db: DB, current_user: CurrentUser):
     result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))

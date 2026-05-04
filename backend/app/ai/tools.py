@@ -180,7 +180,7 @@ def make_tools(db: AsyncSession, actor: User) -> List:
             try:
                 tid = uuid.UUID(ticket_id)
                 status = TicketStatus(new_status)
-                ticket = await ticket_service.change_status(db, tid, status, actor)
+                ticket = await ticket_service.update_ticket(db, tid, {"status": status}, actor)
                 if not ticket: return "Ticket not found."
                 return f"Status updated to {new_status}."
             except Exception as e:

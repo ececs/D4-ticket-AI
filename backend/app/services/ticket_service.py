@@ -25,7 +25,7 @@ from app.models.user import User
 from app.schemas.ticket import TicketOut
 import asyncio
 import logging
-from . import notification_service, embedding_service, scraping_service, cache_service
+from . import notification_service, embedding_service, scraping_service, cache_service, history_service
 
 
 async def get_ticket(db: AsyncSession, ticket_id: uuid.UUID) -> Optional[TicketOut]:
@@ -89,7 +89,10 @@ async def create_ticket(
     # 3. Finalize
     await db.commit()
 
-    # 4. Handle side effects (Notifications) after commit
+    # 4. Handle side effects after commit
+    await history_service.record_change(db, ticket.id, author_id, "created", None, None)
+    await db.commit()
+
     from app.schemas.websocket import WSMessageType
     await notification_service.notify_ticket_created(db, ticket=ticket, actor=author)
     await notification_service.broadcast_global_event(
@@ -135,98 +138,6 @@ async def generate_ticket_embedding_task(ticket_id: uuid.UUID, title: str, descr
         )
 
 
-async def change_status(
-    db: AsyncSession,
-    ticket_id: uuid.UUID,
-    new_status: TicketStatus,
-    actor: User,
-) -> Optional[TicketOut]:
-    """
-    Transitions a ticket to a new workflow status and triggers notifications.
-
-    Args:
-        db: Database session.
-        ticket_id: UUID of the target ticket.
-        new_status: The target TicketStatus enum value.
-        actor: The user performing the action (for auditing and notifications).
-
-    Returns:
-        Optional[TicketOut]: The updated ticket schema, or None if not found.
-    """
-    # 1. Fetch the "live" model from the session
-    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
-    ticket = result.scalar_one_or_none()
-    
-    if not ticket:
-        return None
-
-    # 2. Apply business logic
-    old_status = ticket.status
-    ticket.status = new_status
-    
-    # 4. Persist changes
-    await db.commit()
-    
-    # 5. Handle side effects (Notifications) after commit
-    # This avoids race conditions where the frontend refreshes before the commit is finished
-    if new_status != old_status:
-        await notification_service.notify_status_changed(
-            db, ticket=ticket, actor=actor, new_status=new_status.value
-        )
-        await notification_service.notify_ticket_updated(db, ticket=ticket, actor=actor)
-        await db.commit()  # persist notification records
-        await cache_service.cache_invalidate_prefix("tickets:")
-
-    # 6. Return a clean, decoupled Pydantic object
-    return await get_ticket(db, ticket_id)
-
-
-async def reassign(
-    db: AsyncSession,
-    ticket_id: uuid.UUID,
-    assignee_id: Optional[uuid.UUID],
-    actor: User,
-) -> Optional[TicketOut]:
-    """
-    Changes the assigned user for a ticket and notifies the new assignee.
-
-    Args:
-        db: Database session.
-        ticket_id: UUID of the ticket.
-        assignee_id: UUID of the new user, or None to unassign.
-        actor: The user performing the change.
-
-    Returns:
-        Optional[TicketOut]: The updated ticket schema.
-    """
-    # 1. Fetch the model
-    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
-    ticket = result.scalar_one_or_none()
-    
-    if not ticket:
-        return None
-
-    # 2. Update field
-    ticket.assignee_id = assignee_id
-
-    # 4. Persist
-    await db.commit()
-
-    # 5. Notify after commit if a new assignee is provided
-    if assignee_id:
-        assignee_result = await db.execute(select(User).where(User.id == assignee_id))
-        new_assignee = assignee_result.scalar_one_or_none()
-        if new_assignee:
-            await notification_service.notify_ticket_assigned(
-                db, ticket=ticket, assignee=new_assignee, actor=actor
-            )
-        await db.commit()  # persist notification records
-        await cache_service.cache_invalidate_prefix("tickets:")
-
-    # 6. Return decoupled schema
-    return await get_ticket(db, ticket_id)
-
-
 async def update_ticket(
     db: AsyncSession,
     ticket_id: uuid.UUID,
@@ -244,35 +155,75 @@ async def update_ticket(
 
     old_status = ticket.status
     old_assignee_id = ticket.assignee_id
+    old_priority = ticket.priority
+    old_title = ticket.title
+    old_description = ticket.description
+    old_client_url = ticket.client_url
 
     # Apply updates
     for key, value in update_data.items():
         if hasattr(ticket, key):
             setattr(ticket, key, value)
-    
+
     await db.flush()
 
     # 5. Persist
     await db.commit()
 
-    # 6. Side effects (Notifications) after commit
+    # 6. Side effects after commit: history, notifications, broadcast
+    new_assignee: User | None = None
+    if "assignee_id" in update_data and update_data["assignee_id"] != old_assignee_id:
+        if update_data["assignee_id"]:
+            res = await db.execute(select(User).where(User.id == update_data["assignee_id"]))
+            new_assignee = res.scalar_one_or_none()
+
+    # History — one entry per changed field
+    if "status" in update_data and update_data["status"] != old_status:
+        new_status_val = update_data["status"].value if hasattr(update_data["status"], "value") else str(update_data["status"])
+        await history_service.record_change(db, ticket_id, actor.id, "status", old_status.value, new_status_val)
+
+    if "priority" in update_data and update_data["priority"] != old_priority:
+        new_priority_val = update_data["priority"].value if hasattr(update_data["priority"], "value") else str(update_data["priority"])
+        await history_service.record_change(db, ticket_id, actor.id, "priority", old_priority.value, new_priority_val)
+
+    if "title" in update_data and update_data["title"] != old_title:
+        await history_service.record_change(db, ticket_id, actor.id, "title", old_title, update_data["title"])
+
+    if "description" in update_data and update_data["description"] != old_description:
+        await history_service.record_change(db, ticket_id, actor.id, "description", None, None)
+
+    if "client_url" in update_data and update_data["client_url"] != old_client_url:
+        await history_service.record_change(db, ticket_id, actor.id, "client_url", old_client_url, update_data["client_url"])
+
+    if "assignee_id" in update_data and update_data["assignee_id"] != old_assignee_id:
+        old_assignee_name: str | None = None
+        if old_assignee_id:
+            old_res = await db.execute(select(User).where(User.id == old_assignee_id))
+            old_assignee_obj = old_res.scalar_one_or_none()
+            old_assignee_name = old_assignee_obj.name if old_assignee_obj else None
+        new_assignee_name = new_assignee.name if new_assignee else None
+        await history_service.record_change(db, ticket_id, actor.id, "assignee", old_assignee_name, new_assignee_name)
+
+    # Notifications
     if "status" in update_data and update_data["status"] != old_status:
         await notification_service.notify_status_changed(
             db, ticket=ticket, actor=actor, new_status=update_data["status"]
         )
 
+    if "priority" in update_data and update_data["priority"] != old_priority:
+        await notification_service.notify_priority_changed(
+            db, ticket=ticket, actor=actor, new_priority=update_data["priority"]
+        )
+
     if "assignee_id" in update_data and update_data["assignee_id"] != old_assignee_id:
-        if update_data["assignee_id"]:
-            res = await db.execute(select(User).where(User.id == update_data["assignee_id"]))
-            new_assignee = res.scalar_one_or_none()
-            if new_assignee:
-                await notification_service.notify_ticket_assigned(
-                    db, ticket=ticket, assignee=new_assignee, actor=actor
-                )
-        
-    # Generic update notification to trigger UI refreshes
+        if new_assignee:
+            await notification_service.notify_ticket_assigned(
+                db, ticket=ticket, assignee=new_assignee, actor=actor
+            )
+
+    # Generic broadcast to trigger UI refreshes
     await notification_service.notify_ticket_updated(db, ticket=ticket, actor=actor)
-    await db.commit()  # persist notification records
+    await db.commit()  # persist history + notification records
     await cache_service.cache_invalidate_prefix("tickets:")
 
     # --- Side effects (Background Tasks) ---

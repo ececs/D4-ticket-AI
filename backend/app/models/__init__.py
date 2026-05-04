@@ -4,6 +4,7 @@ from .comment import Comment
 from .attachment import Attachment
 from .notification import Notification, NotificationType
 from .knowledge_chunk import KnowledgeChunk
+from .ticket_history import TicketHistory
 
 __all__ = [
     "User",
@@ -12,4 +13,5 @@ __all__ = [
     "Attachment",
     "Notification", "NotificationType",
     "KnowledgeChunk",
+    "TicketHistory",
 ]

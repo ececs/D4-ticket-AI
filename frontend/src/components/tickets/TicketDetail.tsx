@@ -17,11 +17,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, Clock, Paperclip, Trash2, Download, MessageSquare, Send, Loader2, Sparkles, RefreshCw, Globe, ExternalLink, Info, ChevronDown, ChevronUp,
+  ArrowLeft, Clock, Paperclip, Trash2, Download, MessageSquare, Send, Loader2, Sparkles, RefreshCw, Globe, ExternalLink, Info, ChevronDown, ChevronUp, History,
 } from "lucide-react";
 import api from "@/lib/api";
 import {
-  Ticket, Comment, Attachment, TicketStatus, TicketPriority, User,
+  Ticket, Comment, Attachment, TicketStatus, TicketPriority, User, TicketHistory,
 } from "@/types";
 import { getAuthToken } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +33,18 @@ import useNotificationStore from "@/stores/notificationStore";
 
 const STATUSES: TicketStatus[] = ["open", "in_progress", "in_review", "closed"];
 const PRIORITIES: TicketPriority[] = ["low", "medium", "high", "critical"];
+
+const fmt = (v: string | null) => v?.replace(/_/g, " ") ?? "—";
+
+const HISTORY_LABELS: Record<string, (old: string | null, next: string | null) => string> = {
+  created:     ()          => "created this ticket",
+  status:      (o, n)      => `changed status from ${fmt(o)} to ${fmt(n)}`,
+  priority:    (o, n)      => `changed priority from ${fmt(o)} to ${fmt(n)}`,
+  assignee:    (o, n)      => n ? `assigned to ${n}` : `unassigned${o ? ` from ${o}` : ""}`,
+  title:       ()          => "renamed the ticket",
+  description: ()          => "updated the description",
+  client_url:  (_, n)      => n ? `set client URL to ${n}` : "removed client URL",
+};
 
 interface TicketDetailProps {
   ticketId: string;
@@ -48,6 +60,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [history, setHistory] = useState<TicketHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,16 +123,18 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
     if (!ticketId || ticketId === "None" || ticketId === "undefined") return;
     if (!background) setIsLoading(true);
     try {
-      const [ticketRes, commentsRes, attachmentsRes, webCtxRes] = await Promise.all([
+      const [ticketRes, commentsRes, attachmentsRes, webCtxRes, historyRes] = await Promise.all([
         api.get<Ticket>(`/tickets/${ticketId}`),
         api.get<Comment[]>(`/tickets/${ticketId}/comments`),
         api.get<Attachment[]>(`/tickets/${ticketId}/attachments`).catch(() => ({ data: [] as Attachment[] })),
         api.get<{ content: string | null }>(`/tickets/${ticketId}/web-context`).catch(() => ({ data: { content: null } })),
+        api.get<TicketHistory[]>(`/tickets/${ticketId}/history`).catch(() => ({ data: [] as TicketHistory[] })),
       ]);
       setTicket(ticketRes.data);
       setComments(commentsRes.data);
       setAttachments(attachmentsRes.data);
       setExtractedContent(webCtxRes.data.content);
+      setHistory(historyRes.data);
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number; data?: { detail?: string } } })?.response?.status;
       const detail = (err as { response?: { status?: number; data?: { detail?: string } } })?.response?.data?.detail;
@@ -730,6 +745,27 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
               </button>
             </form>
           </div>
+
+          {/* Activity */}
+          {history.length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <h2 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-1.5">
+                <History className="w-4 h-4" /> Activity
+              </h2>
+              <ol className="relative border-l border-slate-100 space-y-4 ml-2">
+                {history.map((entry) => (
+                  <li key={entry.id} className="pl-4">
+                    <span className="absolute -left-1 w-2 h-2 rounded-full bg-slate-300 mt-1.5" />
+                    <p className="text-sm text-slate-700">
+                      <span className="font-medium">{entry.actor?.name ?? "Someone"}</span>{" "}
+                      {HISTORY_LABELS[entry.field]?.(entry.old_value, entry.new_value) ?? `updated ${entry.field}`}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-0.5">{timeAgo(entry.created_at)}</p>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
         </div>
 
         {/* ── Sidebar ── */}
