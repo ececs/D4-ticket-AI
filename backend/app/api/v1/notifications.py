@@ -31,8 +31,22 @@ async def mark_read(notification_id: uuid.UUID, current_user: CurrentUser, db: D
     return {"ok": True}
 
 
+@router.delete("/{notification_id}", summary="Delete a notification")
+async def delete_notification(notification_id: uuid.UUID, current_user: CurrentUser, db: DB):
+    """Delete a single notification owned by the current user."""
+    success = await notification_service.delete_notification(
+        db, notification_id=notification_id, user_id=current_user.id
+    )
+    if not success:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"ok": True}
+
+
 @router.patch("/read-all", summary="Mark all notifications as read")
 async def mark_all_read(current_user: CurrentUser, db: DB):
     """Mark all unread notifications for the current user as read at once."""
     count = await notification_service.mark_all_read(db, user_id=current_user.id)
+    await notification_service.broadcast_notifications_read_all(
+        db, user_id=current_user.id, unread_count=0
+    )
     return {"ok": True, "count": count}

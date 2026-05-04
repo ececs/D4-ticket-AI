@@ -30,7 +30,14 @@ const WS_URL = process.env.NEXT_PUBLIC_API_URL?.replace("http", "ws") ?? "ws://l
 export function useWebSocket(token: string | null) {
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
-    const { addNotification, triggerRefresh, triggerDelete, syncUnreadCount } = useNotificationStore();
+    const {
+      addNotification,
+      syncRemoveNotification,
+      triggerRefresh,
+      triggerDelete,
+      syncUnreadCount,
+      syncMarkAllAsRead,
+    } = useNotificationStore();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -96,6 +103,21 @@ export function useWebSocket(token: string | null) {
                   description: data.message || "Tienes una nueva actualización.",
                 });
               }
+              break;
+
+            case "notification_deleted":
+              if (data && data.id) {
+                syncRemoveNotification(
+                  String(data.id),
+                  typeof data.unread_count === "number" ? data.unread_count : undefined,
+                );
+              }
+              break;
+
+            case "notifications_read_all":
+              syncMarkAllAsRead(
+                data && typeof data.unread_count === "number" ? data.unread_count : 0,
+              );
               break;
 
             case "ticket_updated":

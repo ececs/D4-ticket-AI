@@ -36,6 +36,7 @@ interface ChatSidebarProps {
 }
 
 export function ChatSidebar({ onClose }: ChatSidebarProps) {
+  type PendingDelete = { ticket_id: string; ticket_title: string };
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -47,7 +48,7 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
   ]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState<{ticket_id: string; ticket_title: string} | null>(null);
+  const [deleteQueue, setDeleteQueue] = useState<PendingDelete[]>([]);
   const router = useRouter();
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -86,6 +87,7 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
   const params = useParams();
   const currentTicketId = params?.id as string | undefined;
   const { selectedTicketIds } = useSelectionStore();
+  const pendingDelete = deleteQueue[0] ?? null;
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -177,7 +179,7 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
           try {
             const event = JSON.parse(line) as {
               type: string;
-              content?: any;
+              content?: string;
               name?: string;
               result?: string;
               thread_id?: string;
@@ -218,8 +220,14 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
                 )
               );
             } else if (event.type === "confirmation_required" && event.ticket_id) {
-              // Server-enforced delete confirmation — show the existing ConfirmDialog
-              setPendingDelete({ ticket_id: event.ticket_id, ticket_title: event.ticket_title });
+              // Queue delete confirmations so multiple selected tickets are confirmed one by one.
+              setDeleteQueue((prev) => [
+                ...prev,
+                {
+                  ticket_id: event.ticket_id,
+                  ticket_title: event.ticket_title ?? "this ticket",
+                },
+              ]);
             } else if (event.type === "done") {
               break;
             }
@@ -253,7 +261,7 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
   const handleConfirmDelete = async () => {
     if (!pendingDelete) return;
     const { ticket_id, ticket_title } = pendingDelete;
-    setPendingDelete(null);
+    setDeleteQueue((prev) => prev.slice(1));
     try {
       await api.delete(`/tickets/${ticket_id}`);
       // Add a system message confirming the deletion
@@ -278,6 +286,10 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
         },
       ]);
     }
+  };
+
+  const handleCancelDelete = () => {
+    setDeleteQueue((prev) => prev.slice(1));
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -407,7 +419,7 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
         description={`Are you sure you want to permanently delete "${pendingDelete?.ticket_title}"? This action cannot be undone.`}
         confirmLabel="Delete ticket"
         onConfirm={handleConfirmDelete}
-        onCancel={() => setPendingDelete(null)}
+        onCancel={handleCancelDelete}
       />
     </>
   );

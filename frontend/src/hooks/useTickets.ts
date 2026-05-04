@@ -45,7 +45,6 @@ export function useTickets(filters: TicketFilters = {}): UseTicketsReturn {
   const refreshSignal = useNotificationStore((s) => s.refreshSignal);
   const lastTicketId = useNotificationStore((s) => s.lastTicketId);
   const deletedTicketId = useNotificationStore((s) => s.deletedTicketId);
-  const triggerDelete = useNotificationStore((s) => s.triggerDelete);
 
   // Partial update or full refetch when the refresh signal is triggered
   useEffect(() => {
@@ -57,7 +56,7 @@ export function useTickets(filters: TicketFilters = {}): UseTicketsReturn {
       setTotal((n) => Math.max(0, n - 1));
       // CRITICAL: Clear the deleted ID after handling it to avoid "ghost deletions"
       // on subsequent re-renders or filter changes.
-      setTimeout(() => triggerDelete(""), 0);
+      setTimeout(() => useNotificationStore.getState().triggerDelete(""), 0);
     } else if (lastTicketId && lastTicketId !== "None" && lastTicketId !== "undefined" && lastTicketId !== "*") {
       // Optimized: Only fetch the updated ticket and update it in the local state
       api.get<Ticket>(`/tickets/${lastTicketId}`)
@@ -115,7 +114,7 @@ export function useTickets(filters: TicketFilters = {}): UseTicketsReturn {
 
     try {
       await api.patch(`/tickets/${ticketId}`, { status: newStatus });
-    } catch (err: any) {
+    } catch {
       // Rollback on failure
       if (previous) {
         setTickets((prev) =>
@@ -152,7 +151,7 @@ export function useTickets(filters: TicketFilters = {}): UseTicketsReturn {
 
     try {
       await api.delete(`/tickets/${ticketId}`);
-    } catch (err: any) {
+    } catch {
       setTickets(snapshot);
       setTotal((n) => n + 1);
       toast({

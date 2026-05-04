@@ -88,13 +88,18 @@ export interface Attachment {
 
 // ─── Notification ────────────────────────────────────────────────────────────
 
-export type NotificationType = "assigned" | "commented" | "status_changed" | "ticket_updated";
+export type NotificationType =
+  | "assigned"
+  | "commented"
+  | "status_changed"
+  | "ticket_updated"
+  | "ticket_deleted";
 
 export interface Notification {
   id: string;
   user_id: string;
   type: NotificationType;
-  ticket_id: string;
+  ticket_id: string | null;
   message: string;
   read: boolean;
   created_at: string;

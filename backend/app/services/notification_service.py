@@ -46,6 +46,23 @@ async def _pg_notify(db: AsyncSession, user_id: str, payload: dict) -> None:
     )
 
 
+async def _publish_user_event(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    ws_msg: WSMessage,
+) -> None:
+    """Broadcast a user-scoped WebSocket event via Redis or PG NOTIFY fallback."""
+    event = ws_msg.model_dump(mode="json")
+    event["user_id"] = str(user_id)
+
+    if pubsub_service.is_redis_available():
+        await pubsub_service.publish(event)
+        logger.debug("Broadcasted %s to user %s via Redis", ws_msg.type, user_id)
+    else:
+        await _pg_notify(db, str(user_id), event)
+        logger.debug("Broadcasted %s to user %s via PG Notify", ws_msg.type, user_id)
+
+
 async def _create_notification(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -98,18 +115,8 @@ async def _create_notification(
         }
     )
     
-    event = ws_msg.model_dump(mode="json")
-    # Add user_id for the listener to know where to broadcast
-    event["user_id"] = str(user_id)
-    
     logger.info(f"🔔 Notification created: type={notification_type.value}, user={user_id}, msg={message[:30]}...")
-    
-    if pubsub_service.is_redis_available():
-        await pubsub_service.publish(event)
-        logger.debug(f"Broadcasted notification to user {user_id} via Redis")
-    else:
-        await _pg_notify(db, str(user_id), event)
-        logger.debug(f"Broadcasted notification to user {user_id} via PG Notify")
+    await _publish_user_event(db, user_id, ws_msg)
 
     return notification
 
@@ -336,6 +343,39 @@ async def mark_read(
     return result.rowcount > 0
 
 
+async def delete_notification(
+    db: AsyncSession,
+    notification_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> bool:
+    """
+    Delete a single notification if it belongs to the user.
+    """
+    result = await db.execute(
+        select(Notification).where(
+            Notification.id == notification_id,
+            Notification.user_id == user_id,
+        )
+    )
+    notification = result.scalar_one_or_none()
+    if not notification:
+        return False
+
+    await db.delete(notification)
+    await db.commit()
+
+    unread_count = await get_unread_count(db, user_id)
+    ws_msg = WSMessage(
+        type=WSMessageType.NOTIFICATION_DELETED,
+        data={
+            "id": str(notification_id),
+            "unread_count": unread_count,
+        },
+    )
+    await _publish_user_event(db, user_id, ws_msg)
+    return True
+
+
 async def mark_all_read(db: AsyncSession, user_id: uuid.UUID) -> int:
     """
     Marks all unread notifications for a user as read.
@@ -348,6 +388,19 @@ async def mark_all_read(db: AsyncSession, user_id: uuid.UUID) -> int:
     )
     await db.commit()
     return result.rowcount
+
+
+async def broadcast_notifications_read_all(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    unread_count: int = 0,
+) -> None:
+    """Notify all active tabs for a user that every notification is now read."""
+    ws_msg = WSMessage(
+        type=WSMessageType.NOTIFICATIONS_READ_ALL,
+        data={"unread_count": unread_count},
+    )
+    await _publish_user_event(db, user_id, ws_msg)
 
 
 async def get_unread_count(db: AsyncSession, user_id: uuid.UUID) -> int:

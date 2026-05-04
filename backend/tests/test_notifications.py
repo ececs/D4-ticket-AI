@@ -1,4 +1,5 @@
 import uuid
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -106,6 +107,38 @@ async def test_mark_notification_read(client: AsyncClient):
     assert target["read"] is True
 
 
+async def test_delete_notification_removes_it(client: AsyncClient):
+    ticket = await _create_ticket(client)
+    await client.patch(f"/api/v1/tickets/{ticket['id']}", json={"status": "closed"})
+
+    notifications = (await client.get("/api/v1/notifications")).json()
+    notification_id = notifications[0]["id"]
+
+    response = await client.delete(f"/api/v1/notifications/{notification_id}")
+    assert response.status_code == 200
+
+    updated = (await client.get("/api/v1/notifications")).json()
+    assert all(n["id"] != notification_id for n in updated)
+
+
+async def test_delete_notification_broadcasts_sync_event(
+    client: AsyncClient,
+):
+    ticket = await _create_ticket(client)
+    await client.patch(f"/api/v1/tickets/{ticket['id']}", json={"status": "closed"})
+    notifications = (await client.get("/api/v1/notifications")).json()
+    notification_id = notifications[0]["id"]
+
+    with patch(
+        "app.services.notification_service._publish_user_event",
+        new_callable=AsyncMock,
+    ) as mock_publish:
+        response = await client.delete(f"/api/v1/notifications/{notification_id}")
+
+    assert response.status_code == 200
+    mock_publish.assert_awaited_once()
+
+
 async def test_mark_all_notifications_read(client: AsyncClient):
     ticket = await _create_ticket(client)
     await client.patch(f"/api/v1/tickets/{ticket['id']}", json={"status": "in_progress"})
@@ -116,6 +149,42 @@ async def test_mark_all_notifications_read(client: AsyncClient):
 
     notifications = (await client.get("/api/v1/notifications")).json()
     assert all(n["read"] is True for n in notifications)
+
+
+async def test_mark_all_notifications_broadcasts_sync_event(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    ticket = await _create_ticket(client)
+    await client.patch(f"/api/v1/tickets/{ticket['id']}", json={"status": "in_progress"})
+
+    with patch(
+        "app.services.notification_service.broadcast_notifications_read_all",
+        new_callable=AsyncMock,
+    ) as mock_broadcast:
+        response = await client.patch("/api/v1/notifications/read-all")
+
+    assert response.status_code == 200
+    mock_broadcast.assert_awaited_once()
+
+
+async def test_delete_other_users_notification_returns_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    second_user: User,
+):
+    ticket = await _create_ticket(client)
+    notification = Notification(
+        user_id=second_user.id,
+        type=NotificationType.status_changed,
+        ticket_id=uuid.UUID(ticket["id"]),
+        message="Not yours",
+    )
+    db_session.add(notification)
+    await db_session.commit()
+
+    response = await client.delete(f"/api/v1/notifications/{notification.id}")
+    assert response.status_code == 404
 
 
 async def test_mark_all_read_on_empty_is_ok(client: AsyncClient):

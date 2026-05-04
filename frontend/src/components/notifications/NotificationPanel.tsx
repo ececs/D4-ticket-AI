@@ -11,7 +11,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { CheckCheck, Bell } from "lucide-react";
+import { CheckCheck, Bell, Trash2 } from "lucide-react";
 import useNotificationStore from "@/stores/notificationStore";
 import { useNotifications } from "@/hooks/useNotifications";
 import { timeAgo } from "@/lib/utils";
@@ -21,6 +21,7 @@ const TYPE_ICONS: Record<string, string> = {
   commented: "💬",
   status_changed: "🔄",
   ticket_updated: "📝",
+  ticket_deleted: "🗑️",
 };
 
 interface NotificationPanelProps {
@@ -30,13 +31,21 @@ interface NotificationPanelProps {
 export function NotificationPanel({ onClose }: NotificationPanelProps) {
   const router = useRouter();
   const notifications = useNotificationStore((s) => s.notifications);
-  const { handleMarkAsRead, handleMarkAllAsRead } = useNotifications();
+  const { handleMarkAsRead, handleMarkAllAsRead, handleDeleteNotification } = useNotifications();
 
   const handleItemClick = async (id: string, ticketId: string) => {
     if (!ticketId) return; // Guard: never navigate to /tickets/undefined
     await handleMarkAsRead(id);
     onClose();
     router.push(`/tickets/${ticketId}`);
+  };
+
+  const handleDeleteClick = async (
+    e: React.MouseEvent<HTMLButtonElement>,
+    notificationId: string,
+  ) => {
+    e.stopPropagation();
+    await handleDeleteNotification(notificationId);
   };
 
   return (
@@ -72,32 +81,45 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
           </div>
         ) : (
           notifications.map((n) => (
-            <button
+            <div
               key={n.id}
-              onClick={() => handleItemClick(n.id, n.ticket_id)}
-              className={`w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 ${
+              className={`w-full px-4 py-3 flex items-start gap-3 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 ${
                 !n.read ? "bg-blue-50/50" : ""
               }`}
             >
-              {/* Icon */}
-              <span className="text-lg leading-none mt-0.5" aria-hidden>
-                {TYPE_ICONS[n.type] ?? "🔔"}
-              </span>
+              <button
+                onClick={() => handleItemClick(n.id, n.ticket_id ?? "")}
+                className="flex items-start gap-3 flex-1 min-w-0 text-left"
+              >
+                {/* Icon */}
+                <span className="text-lg leading-none mt-0.5" aria-hidden>
+                  {TYPE_ICONS[n.type] ?? "🔔"}
+                </span>
 
-              <div className="flex-1 min-w-0">
-                {/* Message */}
-                <p className={`text-sm leading-snug ${!n.read ? "font-medium text-slate-800" : "text-slate-600"}`}>
-                  {n.message}
-                </p>
-                {/* Timestamp */}
-                <p className="text-xs text-slate-400 mt-0.5">{timeAgo(n.created_at)}</p>
-              </div>
+                <div className="flex-1 min-w-0">
+                  {/* Message */}
+                  <p className={`text-sm leading-snug ${!n.read ? "font-medium text-slate-800" : "text-slate-600"}`}>
+                    {n.message}
+                  </p>
+                  {/* Timestamp */}
+                  <p className="text-xs text-slate-400 mt-0.5">{timeAgo(n.created_at)}</p>
+                </div>
 
-              {/* Unread dot */}
-              {!n.read && (
-                <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0 mt-1.5" aria-label="Unread" />
-              )}
-            </button>
+                {/* Unread dot */}
+                {!n.read && (
+                  <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0 mt-1.5" aria-label="Unread" />
+                )}
+              </button>
+
+              <button
+                onClick={(e) => handleDeleteClick(e, n.id)}
+                className="shrink-0 p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                aria-label="Delete notification"
+                title="Delete notification"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
           ))
         )}
       </div>

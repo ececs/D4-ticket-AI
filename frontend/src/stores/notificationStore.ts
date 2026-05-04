@@ -21,7 +21,10 @@ interface NotificationState {
   lastTicketId: string | null;
   deletedTicketId: string | null;
   addNotification: (notification: Notification, serverUnreadCount?: number) => void;
+  removeNotification: (id: string, serverUnreadCount?: number) => Promise<void>;
+  syncRemoveNotification: (id: string, serverUnreadCount?: number) => void;
   syncUnreadCount: (count: number) => void;
+  syncMarkAllAsRead: (serverUnreadCount?: number) => void;
   triggerRefresh: (ticketId?: string) => void;
   triggerDelete: (ticketId: string) => void;
   markAsRead: (id: string) => void;
@@ -55,6 +58,12 @@ const useNotificationStore = create<NotificationState>((set) => ({
   // Sync badge count directly from the server-authoritative value
   syncUnreadCount: (count) => set({ unreadCount: count }),
 
+  syncMarkAllAsRead: (serverUnreadCount) =>
+    set((state) => ({
+      notifications: state.notifications.map((n) => ({ ...n, read: true })),
+      unreadCount: typeof serverUnreadCount === "number" ? serverUnreadCount : 0,
+    })),
+
   setNotifications: (notifications) => {
     // Use a Map to ensure absolute uniqueness by ID
     const uniqueMap = new Map();
@@ -77,6 +86,35 @@ const useNotificationStore = create<NotificationState>((set) => ({
         return state;
       }
       const updated = [notification, ...state.notifications];
+      return {
+        notifications: updated,
+        unreadCount: typeof serverUnreadCount === "number"
+          ? serverUnreadCount
+          : updated.filter((n) => !n.read).length,
+      };
+    });
+  },
+
+  removeNotification: async (id, serverUnreadCount) => {
+    try {
+      await api.delete(`/notifications/${id}`);
+    } catch {
+      // Optimistic removal remains applied for UX consistency across tabs.
+    }
+    set((state) => {
+      const updated = state.notifications.filter((n) => n.id !== id);
+      return {
+        notifications: updated,
+        unreadCount: typeof serverUnreadCount === "number"
+          ? serverUnreadCount
+          : updated.filter((n) => !n.read).length,
+      };
+    });
+  },
+
+  syncRemoveNotification: (id, serverUnreadCount) => {
+    set((state) => {
+      const updated = state.notifications.filter((n) => n.id !== id);
       return {
         notifications: updated,
         unreadCount: typeof serverUnreadCount === "number"
