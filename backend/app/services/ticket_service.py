@@ -87,10 +87,11 @@ async def create_ticket(
 
     # 3. Finalize
     await db.commit()
-    
+
     # 4. Handle side effects (Notifications) after commit
     await notification_service.notify_ticket_created(db, ticket=ticket, actor=author)
-    
+    await db.commit()  # persist notification records created by the service
+
     # 5. Background tasks
     asyncio.create_task(generate_ticket_embedding_task(ticket.id, title, description))
     if client_url:
@@ -165,6 +166,7 @@ async def change_status(
             db, ticket=ticket, actor=actor, new_status=new_status.value
         )
         await notification_service.notify_ticket_updated(db, ticket=ticket, actor=actor)
+        await db.commit()  # persist notification records
 
     # 6. Return a clean, decoupled Pydantic object
     return await get_ticket(db, ticket_id)
@@ -209,6 +211,7 @@ async def reassign(
             await notification_service.notify_ticket_assigned(
                 db, ticket=ticket, assignee=new_assignee, actor=actor
             )
+        await db.commit()  # persist notification records
 
     # 6. Return decoupled schema
     return await get_ticket(db, ticket_id)
@@ -259,6 +262,7 @@ async def update_ticket(
         
     # Generic update notification to trigger UI refreshes
     await notification_service.notify_ticket_updated(db, ticket=ticket, actor=actor)
+    await db.commit()  # persist notification records
 
     # --- Side effects (Background Tasks) ---
     if "title" in update_data or "description" in update_data:
