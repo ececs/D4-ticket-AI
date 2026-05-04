@@ -53,6 +53,20 @@ export function BoardContent() {
 
         {/* Controls: view toggle + new ticket */}
         <div className="flex items-center gap-3">
+          {/* Page size selector */}
+          <select
+            aria-label="Tickets por página"
+            value={filters.size ?? 20}
+            onChange={(e) =>
+              setFilters({ ...filters, size: Number(e.target.value), page: 1 })
+            }
+            className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-600"
+          >
+            {[20, 50, 100].map((n) => (
+              <option key={n} value={n}>{n} por página</option>
+            ))}
+          </select>
+
           {/* List / Kanban toggle */}
           <div className="flex items-center bg-slate-100 rounded-lg p-1 gap-0.5">
             <button
@@ -101,12 +115,39 @@ export function BoardContent() {
           isLoading={isLoading}
         />
       ) : (
-        <KanbanBoard
-          tickets={tickets}
-          onStatusChange={(id: string, status: TicketStatus) =>
-            updateTicketStatus(id, status)
-          }
-        />
+        <>
+          <KanbanBoard
+            tickets={tickets}
+            onStatusChange={(id: string, status: TicketStatus) =>
+              updateTicketStatus(id, status)
+            }
+          />
+          {total > (filters.size ?? 20) && (
+            <div className="flex items-center justify-center gap-2 mt-6">
+              <button
+                onClick={() =>
+                  setFilters({ ...filters, page: Math.max(1, (filters.page ?? 1) - 1) })
+                }
+                disabled={(filters.page ?? 1) <= 1}
+                className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50 transition-colors"
+              >
+                Previous
+              </button>
+              <span className="text-sm text-slate-500">
+                Page {filters.page ?? 1} of {Math.ceil(total / (filters.size ?? 20))}
+              </span>
+              <button
+                onClick={() =>
+                  setFilters({ ...filters, page: (filters.page ?? 1) + 1 })
+                }
+                disabled={(filters.page ?? 1) >= Math.ceil(total / (filters.size ?? 20))}
+                className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50 transition-colors"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {/* Create ticket dialog */}
