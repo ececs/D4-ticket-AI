@@ -74,6 +74,8 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
   const [editingSummary, setEditingSummary] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState("");
 
+  const [showHistory, setShowHistory] = useState(false);
+
   // Comment form state
   const [commentText, setCommentText] = useState("");
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
@@ -747,25 +749,43 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
           </div>
 
           {/* Activity */}
-          {history.length > 0 && (
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
-              <h2 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-1.5">
-                <History className="w-4 h-4" /> Activity
-              </h2>
-              <ol className="relative border-l border-slate-100 space-y-4 ml-2">
-                {history.map((entry) => (
-                  <li key={entry.id} className="pl-4">
-                    <span className="absolute -left-1 w-2 h-2 rounded-full bg-slate-300 mt-1.5" />
-                    <p className="text-sm text-slate-700">
-                      <span className="font-medium">{entry.actor?.name ?? "Someone"}</span>{" "}
-                      {HISTORY_LABELS[entry.field]?.(entry.old_value, entry.new_value) ?? `updated ${entry.field}`}
-                    </p>
-                    <p className="text-xs text-slate-400 mt-0.5">{timeAgo(entry.created_at)}</p>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowHistory((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors"
+            >
+              <span className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+                <History className="w-4 h-4" />
+                Activity
+                {history.length > 0 && (
+                  <span className="ml-1 text-xs font-normal text-slate-400">({history.length})</span>
+                )}
+              </span>
+              {showHistory ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+            </button>
+
+            {showHistory && (
+              <div className="px-4 pb-4 border-t border-slate-100">
+                {history.length === 0 ? (
+                  <p className="text-sm text-slate-400 text-center py-4">No activity yet</p>
+                ) : (
+                  <ol className="relative border-l border-slate-100 space-y-4 ml-2 mt-4">
+                    {history.map((entry) => (
+                      <li key={entry.id} className="pl-4">
+                        <span className="absolute -left-1 w-2 h-2 rounded-full bg-slate-300 mt-1.5" />
+                        <p className="text-sm text-slate-700">
+                          <span className="font-medium">{entry.actor?.name ?? "Someone"}</span>{" "}
+                          {HISTORY_LABELS[entry.field]?.(entry.old_value, entry.new_value) ?? `updated ${entry.field}`}
+                        </p>
+                        <p className="text-xs text-slate-400 mt-0.5">{timeAgo(entry.created_at)}</p>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* ── Sidebar ── */}
