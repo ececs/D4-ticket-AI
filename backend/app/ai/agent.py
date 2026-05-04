@@ -72,7 +72,7 @@ Guidelines:
 def get_llm() -> BaseChatModel:
     """
     Return the LLM singleton, building it on first call.
-    Primary: Gemini 2.0 Flash — Fallback: OpenAI GPT-4o-mini.
+    Primary: Gemini 2.5 Flash — Fallback: OpenAI GPT-4o-mini.
     Cached at module level to avoid re-instantiating HTTP clients per request.
     """
     global _llm_singleton
@@ -83,7 +83,7 @@ def get_llm() -> BaseChatModel:
 
 
 def _build_llm() -> BaseChatModel:
-    primary_model = settings.AI_MODEL or "gemini-2.0-flash"
+    primary_model = settings.AI_MODEL or "gemini-2.5-flash"
 
     # 1. Primary LLM
     if settings.AI_PROVIDER == "google":
