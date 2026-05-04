@@ -67,6 +67,42 @@ async def test_assign_ticket_creates_notification(client: AsyncClient, test_user
     assert "assigned" in types
 
 
+async def test_priority_change_creates_ticket_updated_notification_with_priority_message(
+    client: AsyncClient,
+):
+    ticket = await _create_ticket(client, title="Priority ticket", priority="low")
+    await client.patch(f"/api/v1/tickets/{ticket['id']}", json={"priority": "critical"})
+
+    notifications = (await client.get("/api/v1/notifications")).json()
+    priority_notifs = [
+        n for n in notifications
+        if n["type"] == "ticket_updated" and "changed priority" in n["message"]
+    ]
+    assert len(priority_notifs) == 1
+    assert priority_notifs[0]["ticket_id"] == ticket["id"]
+    assert "Critical" in priority_notifs[0]["message"]
+
+
+async def test_no_priority_notification_when_value_does_not_change(
+    client: AsyncClient,
+):
+    ticket = await _create_ticket(client, title="Stable priority", priority="medium")
+
+    before = (await client.get("/api/v1/notifications")).json()
+    before_priority_changes = [
+        n for n in before if n["type"] == "ticket_updated" and "changed priority" in n["message"]
+    ]
+
+    response = await client.patch(f"/api/v1/tickets/{ticket['id']}", json={"priority": "medium"})
+    assert response.status_code == 200
+
+    after = (await client.get("/api/v1/notifications")).json()
+    after_priority_changes = [
+        n for n in after if n["type"] == "ticket_updated" and "changed priority" in n["message"]
+    ]
+    assert len(after_priority_changes) == len(before_priority_changes)
+
+
 async def test_multiple_events_create_multiple_notifications(client: AsyncClient):
     ticket = await _create_ticket(client, title="Multi-event")
     await client.patch(f"/api/v1/tickets/{ticket['id']}", json={"status": "in_progress"})
@@ -166,6 +202,23 @@ async def test_mark_all_notifications_broadcasts_sync_event(
 
     assert response.status_code == 200
     mock_broadcast.assert_awaited_once()
+
+
+async def test_mark_all_read_then_new_notification_is_unread_again(client: AsyncClient):
+    ticket = await _create_ticket(client, title="Read all then new one")
+    await client.patch(f"/api/v1/tickets/{ticket['id']}", json={"status": "in_progress"})
+
+    read_all = await client.patch("/api/v1/notifications/read-all")
+    assert read_all.status_code == 200
+    assert all(n["read"] is True for n in (await client.get("/api/v1/notifications")).json())
+
+    await client.patch(f"/api/v1/tickets/{ticket['id']}", json={"status": "closed"})
+
+    notifications = (await client.get("/api/v1/notifications")).json()
+    unread = [n for n in notifications if n["read"] is False]
+    assert len(unread) == 1
+    assert unread[0]["type"] == "status_changed"
+    assert "Closed" in unread[0]["message"]
 
 
 async def test_delete_other_users_notification_returns_404(

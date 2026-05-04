@@ -235,7 +235,7 @@ def make_tools(db: AsyncSession, actor: User) -> List:
                 # If URL changed, trigger background scraping
                 if client_url:
                     import asyncio
-                    asyncio.create_task(scraping_service.scrape_and_index_url(db, tid, client_url))
+                    asyncio.create_task(scraping_service.scrape_and_index_url(tid, client_url))
 
                 return "Ticket successfully updated."
             except Exception as e:
