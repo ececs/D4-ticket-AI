@@ -79,12 +79,18 @@ async def delete_comment(
         db, comment_id=comment_id, actor_id=current_user.id
     )
     if not success:
-        # Note: 404/403 ambiguity is fine here for security (don't leak existence)
-        # but the project requirements suggest a specific error.
-        # Let's check for existence first to provide better error.
         from sqlalchemy import select
         from app.models.comment import Comment
         exists = (await db.execute(select(Comment).where(Comment.id == comment_id))).scalar_one_or_none()
         if not exists:
             raise HTTPException(status_code=404, detail="Comment not found")
         raise HTTPException(status_code=403, detail="You can only delete your own comments")
+
+    # Broadcast so other users viewing the ticket see the comment disappear
+    from sqlalchemy import select
+    from app.models.ticket import Ticket
+    from app.services import notification_service
+    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = result.scalar_one_or_none()
+    if ticket:
+        await notification_service.notify_ticket_updated(db, ticket=ticket, actor=current_user)

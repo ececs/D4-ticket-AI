@@ -352,8 +352,8 @@ async def list_notifications(
 
 
 async def mark_read(
-    db: AsyncSession, 
-    notification_id: uuid.UUID, 
+    db: AsyncSession,
+    notification_id: uuid.UUID,
     user_id: uuid.UUID
 ) -> bool:
     """
@@ -366,7 +366,17 @@ async def mark_read(
         .values(read=True)
     )
     await db.commit()
-    return result.rowcount > 0
+    if result.rowcount == 0:
+        return False
+
+    unread_count = await get_unread_count(db, user_id)
+    ws_msg = WSMessage(
+        type=WSMessageType.NOTIFICATION_READ,
+        data={"id": str(notification_id), "unread_count": unread_count},
+    )
+    await _publish_user_event(db, user_id, ws_msg)
+    await db.commit()  # flush PG NOTIFY when Redis is unavailable
+    return True
 
 
 async def delete_notification(

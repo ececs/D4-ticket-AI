@@ -6,6 +6,7 @@ import uuid
 class WSMessageType(str, Enum):
     NOTIFICATION = "notification"
     NOTIFICATION_DELETED = "notification_deleted"
+    NOTIFICATION_READ = "notification_read"
     NOTIFICATIONS_READ_ALL = "notifications_read_all"
     WEB_SCRAPE_COMPLETED = "web_scrape_completed"
     TICKET_UPDATED = "ticket_updated"

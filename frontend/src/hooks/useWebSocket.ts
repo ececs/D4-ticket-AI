@@ -33,6 +33,7 @@ export function useWebSocket(token: string | null) {
     const {
       addNotification,
       syncRemoveNotification,
+      syncMarkOneRead,
       triggerRefresh,
       triggerDelete,
       syncUnreadCount,
@@ -102,6 +103,15 @@ export function useWebSocket(token: string | null) {
                   title: "Nueva Notificación",
                   description: data.message || "Tienes una nueva actualización.",
                 });
+              }
+              break;
+
+            case "notification_read":
+              if (data && data.id) {
+                syncMarkOneRead(
+                  String(data.id),
+                  typeof data.unread_count === "number" ? data.unread_count : undefined,
+                );
               }
               break;
 

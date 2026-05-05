@@ -54,7 +54,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
   const router = useRouter();
   const { users } = useUsers();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { refreshSignal, lastTicketId } = useNotificationStore();
+  const { refreshSignal, lastTicketId, deletedTicketId } = useNotificationStore();
   const { toast } = useToast();
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
@@ -120,6 +120,13 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
       setIsRefreshingWeb(false);
     }
   }, [refreshSignal, lastTicketId, ticketId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // If this ticket was deleted from another tab, navigate away
+  useEffect(() => {
+    if (deletedTicketId && deletedTicketId === ticketId) {
+      router.push("/board");
+    }
+  }, [deletedTicketId, ticketId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchData = async (background = false) => {
     if (!ticketId || ticketId === "None" || ticketId === "undefined") return;

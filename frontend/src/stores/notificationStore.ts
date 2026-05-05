@@ -25,6 +25,7 @@ interface NotificationState {
   syncRemoveNotification: (id: string, serverUnreadCount?: number) => void;
   syncUnreadCount: (count: number) => void;
   syncMarkAllAsRead: (serverUnreadCount?: number) => void;
+  syncMarkOneRead: (id: string, serverUnreadCount?: number) => void;
   triggerRefresh: (ticketId?: string) => void;
   triggerDelete: (ticketId: string) => void;
   markAsRead: (id: string) => void;
@@ -63,6 +64,19 @@ const useNotificationStore = create<NotificationState>((set) => ({
       notifications: state.notifications.map((n) => ({ ...n, read: true })),
       unreadCount: typeof serverUnreadCount === "number" ? serverUnreadCount : 0,
     })),
+
+  syncMarkOneRead: (id, serverUnreadCount) =>
+    set((state) => {
+      const updated = state.notifications.map((n) =>
+        n.id === id ? { ...n, read: true } : n
+      );
+      return {
+        notifications: updated,
+        unreadCount: typeof serverUnreadCount === "number"
+          ? serverUnreadCount
+          : updated.filter((n) => !n.read).length,
+      };
+    }),
 
   setNotifications: (notifications) => {
     // Use a Map to ensure absolute uniqueness by ID

@@ -70,10 +70,16 @@ export function useTickets(filters: TicketFilters = {}): UseTicketsReturn {
       // from triggering a spurious full refetch.
       setTimeout(() => useNotificationStore.getState().triggerDelete(""), 0);
     } else if (lastTicketId && lastTicketId !== "None" && lastTicketId !== "undefined" && lastTicketId !== "*") {
-      // Optimized: Only fetch the updated ticket and update it in the local state
+      // Optimized: Only fetch the updated ticket and update it in the local state.
+      // If the ticket is not in the current list (e.g. newly created), fall back to
+      // a full refetch so it gets inserted in the correct sorted/paginated position.
       api.get<Ticket>(`/tickets/${lastTicketId}`)
         .then(({ data }) => {
-          setTickets((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+          setTickets((prev) => {
+            const exists = prev.some((t) => t.id === data.id);
+            if (!exists) { refetch(); return prev; }
+            return prev.map((t) => (t.id === data.id ? data : t));
+          });
         })
         .catch((err) => {
           console.error("Failed to fetch partial update, falling back to full refetch", err);
