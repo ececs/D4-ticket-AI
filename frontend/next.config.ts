@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 /**
- * Next.js 15 configuration.
+ * Next.js 16 configuration.
  *
  * Key settings:
  *  - output: "standalone" for Docker deployment (copies only required files)

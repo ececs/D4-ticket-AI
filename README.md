@@ -5,7 +5,7 @@ Repositorio creado específicamente para esta prueba.
 
 ## Demo en producción
 
-**URL:** [https://frontend-eight-chi-54.vercel.app/board](https://frontend-eight-chi-54.vercel.app/board)
+**URL:** [https://frontend-eight-chi-54.vercel.app/board]
 
 Hay dos formas de acceder:
 
@@ -16,9 +16,10 @@ Hay dos formas de acceder:
   Orbidi@2026Xdesafio
   ```
 
-> **Nota sobre acceso:** Orbidi solicitó que en entorno local cualquier cuenta Google pueda registrarse y acceder, y así funciona (`ALLOWED_EMAILS` vacío = acceso abierto). El entorno desplegado en producción está restringido por decisión propia a `@orbidi.com` y algunas cuentas personales específicas para evitar registros no deseados durante la evaluación. Si necesitáis acceder con otra cuenta, puedo añadirla sin problema.
+> **Nota sobre acceso:** Orbidi solicitó que en entorno local cualquier cuenta Google pueda registrarse y acceder, y así funciona (configurando `ALLOWED_EMAILS=["*"]` para acceso abierto). En la demo desplegada en producción se restringió el acceso por seguridad para evitar registros no deseados en la instancia pública. Para facilitar la revisión, se incluye temporalmente un modo demo con código de acceso. Si necesitáis acceder con otra cuenta, puedo añadirla sin problema.
 
 Incluye:
+
 - autenticación con Google OAuth 2.0
 - vista lista y vista Kanban sobre el mismo conjunto de tickets
 - comentarios, adjuntos y reasignación
@@ -28,14 +29,14 @@ Incluye:
 
 ## Stack
 
-| Capa | Tecnología |
-| :--- | :--- |
-| Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS, Zustand |
-| Backend | FastAPI, SQLAlchemy 2, Pydantic v2, Alembic |
-| Base de datos | PostgreSQL 16 + `pgvector` |
-| Tiempo real | WebSockets + Redis Pub/Sub con fallback a PostgreSQL NOTIFY |
-| Storage | MinIO en local / Cloudflare R2 en producción |
-| IA | LangGraph, Gemini 2.5 Flash, OpenAI GPT-4o-mini como fallback |
+| Capa          | Tecnología                                                    |
+| :------------ | :------------------------------------------------------------ |
+| Frontend      | Next.js 16, React 19, TypeScript, Tailwind CSS, Zustand       |
+| Backend       | FastAPI, SQLAlchemy 2, Pydantic v2, Alembic                   |
+| Base de datos | PostgreSQL 16 + `pgvector`                                    |
+| Tiempo real   | WebSockets + Redis Pub/Sub con fallback a PostgreSQL NOTIFY   |
+| Storage       | MinIO en local / Cloudflare R2 en producción                  |
+| IA            | LangGraph, Gemini 2.5 Flash, OpenAI GPT-4o-mini como fallback |
 
 ## Decisiones técnicas
 
@@ -80,16 +81,16 @@ Incluye:
 
 Los eventos emitidos son:
 
-| Evento | Descripción |
-| :--- | :--- |
-| `ticket_created` | un ticket nuevo fue creado |
-| `ticket_updated` | un ticket fue modificado |
-| `ticket_deleted` | un ticket fue eliminado |
-| `notification` | notificación nueva para el usuario |
-| `notification_read` | una notificación fue marcada como leída |
-| `notification_deleted` | una notificación fue eliminada |
+| Evento                   | Descripción                                   |
+| :----------------------- | :-------------------------------------------- |
+| `ticket_created`         | un ticket nuevo fue creado                    |
+| `ticket_updated`         | un ticket fue modificado                      |
+| `ticket_deleted`         | un ticket fue eliminado                       |
+| `notification`           | notificación nueva para el usuario            |
+| `notification_read`      | una notificación fue marcada como leída       |
+| `notification_deleted`   | una notificación fue eliminada                |
 | `notifications_read_all` | todas las notificaciones marcadas como leídas |
-| `web_scrape_completed` | el análisis de la URL del cliente finalizó |
+| `web_scrape_completed`   | el análisis de la URL del cliente finalizó    |
 
 ### IA
 
@@ -340,29 +341,29 @@ npm run dev
 
 ### Backend
 
-| Variable | Descripción |
-| :--- | :--- |
-| `DATABASE_URL` | conexión async a PostgreSQL |
-| `REDIS_URL` | conexión a Redis |
-| `SECRET_KEY` | firma de JWT |
-| `GOOGLE_CLIENT_ID` | OAuth Google |
-| `GOOGLE_CLIENT_SECRET` | OAuth Google |
-| `FRONTEND_URL` | URL del frontend |
-| `BACKEND_URL` | URL pública del backend |
-| `GOOGLE_API_KEY` | Gemini / embeddings |
-| `OPENAI_API_KEY` | fallback del agente |
-| `STORAGE_ENDPOINT` | MinIO o R2 |
-| `STORAGE_ACCESS_KEY` | credencial S3 |
-| `STORAGE_SECRET_KEY` | credencial S3 |
-| `STORAGE_BUCKET` | bucket de adjuntos |
-| `DEMO_ACCESS_CODE` | acceso demo opcional |
-| `ALLOWED_EMAILS` | lista de emails o dominios autorizados para login (vacío = cualquier cuenta Google) |
+| Variable               | Descripción                                                                         |
+| :--------------------- | :---------------------------------------------------------------------------------- |
+| `DATABASE_URL`         | conexión async a PostgreSQL                                                         |
+| `REDIS_URL`            | conexión a Redis                                                                    |
+| `SECRET_KEY`           | firma de JWT                                                                        |
+| `GOOGLE_CLIENT_ID`     | OAuth Google                                                                        |
+| `GOOGLE_CLIENT_SECRET` | OAuth Google                                                                        |
+| `FRONTEND_URL`         | URL del frontend                                                                    |
+| `BACKEND_URL`          | URL pública del backend                                                             |
+| `GOOGLE_API_KEY`       | Gemini / embeddings                                                                 |
+| `OPENAI_API_KEY`       | fallback del agente                                                                 |
+| `STORAGE_ENDPOINT`     | MinIO o R2                                                                          |
+| `STORAGE_ACCESS_KEY`   | credencial S3                                                                       |
+| `STORAGE_SECRET_KEY`   | credencial S3                                                                       |
+| `STORAGE_BUCKET`       | bucket de adjuntos                                                                  |
+| `DEMO_ACCESS_CODE`     | acceso demo opcional                                                                |
+| `ALLOWED_EMAILS`       | lista de emails o dominios autorizados para login (vacío = cualquier cuenta Google) |
 
 ### Frontend
 
-| Variable | Descripción |
-| :--- | :--- |
-| `NEXT_PUBLIC_API_URL` | URL base del backend |
+| Variable                   | Descripción              |
+| :------------------------- | :----------------------- |
+| `NEXT_PUBLIC_API_URL`      | URL base del backend     |
 | `NEXT_PUBLIC_FRONTEND_URL` | URL pública del frontend |
 
 ## Base de datos y migraciones
@@ -380,23 +381,10 @@ npm run dev
 
 Se puede entrar de dos formas:
 
-- **Google OAuth** — cualquier cuenta Google en local (sin restricciones, tal como se solicitó); en producción restringido por decisión propia a `@orbidi.com` y algunas cuentas específicas — si necesitáis acceso con otra cuenta, podéis pedírmelo.
-- **Modo demo** — sin necesidad de cuenta Google, usando el código `Orbidi@2026Xdesafio` en la pantalla de login.
+- **Google OAuth** — cualquier cuenta Google en local (sin restricciones, tal como se solicitó); en producción el acceso está más restringido para proteger la instancia pública.
+- **Modo demo** — sin necesidad de cuenta Google, usando el código `Orbidi@2026Xdesafio` en la pantalla de login. Este acceso se ha dejado de forma temporal para facilitar la evaluación.
 
 Esto evita depender obligatoriamente de una cuenta Google durante la revisión.
-
-### Datos de prueba
-
-Para poblar la instancia de producción con datos realistas, hay un script incluido:
-
-```bash
-# 1. Abre la consola del navegador (F12) tras hacer login y ejecuta:
-#    document.cookie.match(/access_token=([^;]+)/)?.[1]
-# 2. Copia el token y ejecuta:
-TOKEN=<pega_aquí_el_token> python3 seed_data.py
-```
-
-El script crea tickets, comentarios y relaciones representativas sobre la instancia desplegada en Railway.
 
 ## Qué probar rápidamente si se levanta desde cero
 
