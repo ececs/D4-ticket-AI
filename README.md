@@ -226,13 +226,7 @@ Con eso, el evaluador puede entrar desde la pantalla de login usando el código 
 docker-compose up --build
 ```
 
-El backend aplica automáticamente:
-
-```bash
-alembic upgrade head
-```
-
-al arrancar el contenedor, así que no hace falta ejecutar migraciones a mano en Docker.
+El backend aplica automáticamente las migraciones de base de datos (`alembic upgrade head`) al arrancar el contenedor, de modo que no es necesario ejecutarlas de manera manual en tu máquina local.
 
 #### Servicios disponibles
 
