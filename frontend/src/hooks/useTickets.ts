@@ -71,9 +71,9 @@ export function useTickets(filters: TicketFilters = {}): UseTicketsReturn {
       // from triggering a spurious full refetch.
       setTimeout(() => useNotificationStore.getState().triggerDelete(""), 0);
     } else if (lastTicketId && lastTicketId !== "None" && lastTicketId !== "undefined" && lastTicketId !== "*") {
-      // Optimized: Only fetch the updated ticket and update it in the local state.
-      // If the ticket is not in the current list (e.g. newly created), fall back to
-      // a full refetch so it gets inserted in the correct sorted/paginated position.
+      // Optimized: fetch only the changed ticket and merge it into local state.
+      // For new tickets, integrateCreatedTicket sorts it into position; it only
+      // requests a full refetch when filters/pagination make local insertion unsafe.
       api.get<Ticket>(`/tickets/${lastTicketId}`)
         .then(({ data }) => {
           setTickets((prev) => {
