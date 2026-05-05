@@ -29,7 +29,9 @@ import { useToast } from "@/hooks/use-toast";
 import { STATUS_LABELS, PRIORITY_CONFIG, timeAgo, formatDateTime, formatFileSize } from "@/lib/utils";
 import { useUsers } from "@/hooks/useUsers";
 import { UserAvatar } from "@/components/ui/UserAvatar";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import useNotificationStore from "@/stores/notificationStore";
+import useAuthStore from "@/stores/authStore";
 
 const STATUSES: TicketStatus[] = ["open", "in_progress", "in_review", "closed"];
 const PRIORITIES: TicketPriority[] = ["low", "medium", "high", "critical"];
@@ -53,6 +55,7 @@ interface TicketDetailProps {
 export function TicketDetail({ ticketId }: TicketDetailProps) {
   const router = useRouter();
   const { users } = useUsers();
+  const currentUser = useAuthStore((s) => s.user);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { refreshSignal, lastTicketId, deletedTicketId } = useNotificationStore();
   const { toast } = useToast();
@@ -91,6 +94,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
   const [showExtracted, setShowExtracted] = useState(false);
   const [extractedContent, setExtractedContent] = useState<string | null>(null);
   const [isRefreshingWeb, setIsRefreshingWeb] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
 
   const refreshWebContext = async () => {
@@ -318,6 +322,28 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
     }
   };
 
+  const handleDeleteTicket = async () => {
+    try {
+      await api.delete(`/tickets/${ticketId}`);
+      toast({
+        title: "Ticket deleted",
+        description: "The ticket was permanently removed.",
+      });
+      router.push("/board");
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        "Could not delete the ticket.";
+      toast({
+        title: "Deletion failed",
+        description: detail,
+        variant: "destructive",
+      });
+    } finally {
+      setConfirmDeleteOpen(false);
+    }
+  };
+
   // ── Render ───────────────────────────────────────────────────────────────
 
   if (isLoading) {
@@ -338,6 +364,8 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
       </div>
     );
   }
+
+  const canDeleteTicket = currentUser?.id === ticket.author_id;
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -377,7 +405,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
             )}
 
             {/* Status + priority row */}
-            <div className="flex items-center gap-3 mt-3">
+            <div className="mt-3 flex flex-wrap items-center gap-3">
               <select
                 aria-label="Estado del ticket"
                 value={ticket.status}
@@ -417,6 +445,16 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
                 )}
                 Diagnóstico IA
               </button>
+
+              {canDeleteTicket && (
+                <button
+                  onClick={() => setConfirmDeleteOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete ticket
+                </button>
+              )}
             </div>
           </div>
 
@@ -858,6 +896,14 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
           </div>
         </aside>
       </div>
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="Delete ticket"
+        description="This action cannot be undone. The ticket and all its comments and attachments will be permanently removed."
+        confirmLabel="Delete ticket"
+        onConfirm={handleDeleteTicket}
+        onCancel={() => setConfirmDeleteOpen(false)}
+      />
     </div>
   );
 }
