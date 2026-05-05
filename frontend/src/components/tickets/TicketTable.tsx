@@ -379,7 +379,7 @@ export function TicketTable({
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={(e) => { e.stopPropagation(); router.push(`/tickets/${ticket.id}`); }}
-                        aria-label="Abrir ticket"
+                        aria-label="Open ticket"
                         className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
                         title="Open ticket"
                       >
@@ -387,7 +387,7 @@ export function TicketTable({
                       </button>
                       <button
                         onClick={(e) => handleDelete(e, ticket.id)}
-                        aria-label="Eliminar ticket"
+                        aria-label="Delete ticket"
                         className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors"
                         title="Delete ticket"
                       >

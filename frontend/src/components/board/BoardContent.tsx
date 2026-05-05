@@ -55,7 +55,7 @@ export function BoardContent() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           {/* Page size selector */}
           <select
-            aria-label="Tickets por página"
+            aria-label="Tickets per page"
             value={filters.size ?? 20}
             onChange={(e) =>
               setFilters({ ...filters, size: Number(e.target.value), page: 1 })
@@ -63,7 +63,7 @@ export function BoardContent() {
             className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:w-auto"
           >
             {[20, 50, 100].map((n) => (
-              <option key={n} value={n}>{n} por página</option>
+              <option key={n} value={n}>{n} per page</option>
             ))}
           </select>
 

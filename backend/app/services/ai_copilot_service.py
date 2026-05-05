@@ -55,7 +55,7 @@ async def _prepare_diagnosis_context(db: AsyncSession, ticket_id: uuid.UUID):
 
     # 3. RAG Search
     search_query = f"{ticket.title} {ticket.description or ''}"
-    rag_text = "No se encontró información específica en la base de conocimientos."
+    rag_text = "No specific information found in the knowledge base."
     
     try:
         global_task = knowledge_search(db, query=search_query, k=2)
@@ -64,9 +64,9 @@ async def _prepare_diagnosis_context(db: AsyncSession, ticket_id: uuid.UUID):
         
         all_context = []
         if web_ctx:
-            all_context.append("CONTEXTO WEB DEL CLIENTE:\n" + "\n".join(web_ctx))
+            all_context.append("CLIENT WEB CONTEXT:\n" + "\n".join(web_ctx))
         if global_ctx:
-            all_context.append("CONOCIMIENTO GLOBAL / HISTÓRICO:\n" + "\n".join(global_ctx))
+            all_context.append("GLOBAL / HISTORICAL KNOWLEDGE:\n" + "\n".join(global_ctx))
         if all_context:
             rag_text = "\n\n---\n\n".join(all_context)
     except Exception as rag_err:
@@ -74,26 +74,26 @@ async def _prepare_diagnosis_context(db: AsyncSession, ticket_id: uuid.UUID):
 
     # 4. Prompts
     system_prompt = (
-        "Eres un 'AI Co-pilot' experto en soporte técnico. Tu misión es ayudar al técnico a resolver "
-        "este ticket de la forma más eficiente posible.\n\n"
-        "REGLAS:\n"
-        "1. Sé conciso y profesional.\n"
-        "2. Identifica la causa raíz probable.\n"
-        "3. Propón una solución paso a paso.\n"
-        "4. Usa el contexto de la base de conocimientos si es relevante."
+        "You are an expert technical support 'AI Co-pilot'. Your mission is to help the technician resolve "
+        "this ticket in the most efficient way possible.\n\n"
+        "RULES:\n"
+        "1. Be concise and professional.\n"
+        "2. Identify the probable root cause.\n"
+        "3. Propose a step-by-step solution.\n"
+        "4. Use the context from the knowledge base if relevant."
     )
 
     user_prompt = (
-        f"CONTEXTO DEL TICKET:\n"
-        f"Título: {ticket.title}\n"
-        f"Descripción: {ticket.description or 'Sin descripción'}\n"
-        f"Autor: {ticket.author.display_name if ticket.author else 'Unknown'}\n"
-        f"Prioridad: {ticket.priority.value if hasattr(ticket.priority, 'value') else 'medium'}\n\n"
-        f"CONTEXTO DEL CLIENTE:\n"
-        f"{ticket.client_summary or 'No hay información adicional.'}\n\n"
-        f"HISTORIAL DE COMENTARIOS:\n{comments_text or 'Sin comentarios.'}\n\n"
-        f"CONOCIMIENTO TÉCNICO (RAG):\n{rag_text}\n\n"
-        f"Dame una solución sugerida."
+        f"TICKET CONTEXT:\n"
+        f"Title: {ticket.title}\n"
+        f"Description: {ticket.description or 'No description provided.'}\n"
+        f"Author: {ticket.author.display_name if ticket.author else 'Unknown'}\n"
+        f"Priority: {ticket.priority.value if hasattr(ticket.priority, 'value') else 'medium'}\n\n"
+        f"CLIENT CONTEXT:\n"
+        f"{ticket.client_summary or 'No additional information available.'}\n\n"
+        f"COMMENTS HISTORY:\n{comments_text or 'No comments.'}\n\n"
+        f"TECHNICAL KNOWLEDGE (RAG):\n{rag_text}\n\n"
+        f"Provide a suggested solution."
     )
 
     return system_prompt, user_prompt, ticket
@@ -106,7 +106,7 @@ async def get_ticket_diagnosis(db: AsyncSession, ticket_id: uuid.UUID) -> str:
     try:
         sys_p, user_p, _ = await _prepare_diagnosis_context(db, ticket_id)
         if not sys_p:
-            return "Error: Ticket no encontrado."
+            return "Error: Ticket not found."
 
         llm = get_llm()
         response = await llm.ainvoke([
