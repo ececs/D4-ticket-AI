@@ -1,16 +1,18 @@
 """
-Ticket routes — CRUD + filtering + pagination + sorting + semantic search.
+Ticket routes — CRUD + filtering + pagination + sorting + hybrid search.
 
 Search strategy:
   When a `search` query param is provided:
   1. Generate a vector embedding of the query (Google text-embedding-004).
-  2. If embedding succeeds → semantic search: rank results by cosine similarity
-     against stored ticket embeddings (requires pgvector migration to have run).
+  2. If embedding succeeds → run hybrid search:
+     - semantic ranking by cosine similarity against stored ticket embeddings
+     - keyword ranking over title/description matches
+     - fuse both rankings with Reciprocal Rank Fusion (RRF)
   3. If embedding fails (no API key, service down) → keyword fallback: ilike
      on title and description (same behavior as before pgvector).
 
   This means the API degrades gracefully in tests and local dev without an
-  API key, while delivering semantic search in production.
+  API key, while delivering hybrid semantic + keyword retrieval in production.
 
 Embedding side-effects on writes:
   - POST /tickets: embedding generated after commit (fire-and-forget).
@@ -25,7 +27,7 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import CurrentUser, DB
@@ -59,13 +61,14 @@ async def list_tickets(
     status: TicketStatus | None = Query(None),
     priority: TicketPriority | None = Query(None),
     assignee_id: uuid.UUID | None = Query(None),
-    search: str | None = Query(None, description="Semantic search (falls back to keyword)"),
+    search: str | None = Query(None, description="Hybrid semantic + keyword search (falls back to keyword)"),
     sort_by: str = Query("created_at"),
     order: Literal["asc", "desc"] = Query("desc"),
     page: int = Query(1, ge=1),
     size: int = Query(25, ge=1, le=100),
 ):
-    # Cache key = hash of all query params (search excluded to avoid stale semantic results)
+    # Cache key = hash of all query params so each search/filter/page combination
+    # is cached independently.
     cache_params = {
         "status": status.value if status else None,
         "priority": priority.value if priority else None,
@@ -112,8 +115,14 @@ async def list_tickets(
                 .order_by(Ticket.embedding.cosine_distance(search_embedding))  # type: ignore[attr-defined]
                 .limit(POOL)
             )
+            keyword_rank = case(
+                (func.lower(Ticket.title) == search.lower(), 0),
+                (Ticket.title.ilike(pattern), 1),
+                else_=2,
+            )
             kw_q = (
                 query.where(Ticket.title.ilike(pattern) | Ticket.description.ilike(pattern))
+                .order_by(keyword_rank, Ticket.updated_at.desc())
                 .limit(POOL)
             )
 

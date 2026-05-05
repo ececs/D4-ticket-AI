@@ -11,12 +11,16 @@ Orbidi spec requirements covered:
 """
 
 import uuid
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.tickets import list_tickets
+from app.models.ticket import Ticket, TicketPriority, TicketStatus
 from app.models.user import User
 
 
@@ -197,6 +201,133 @@ async def test_list_tickets_search_no_match_returns_empty(client: AsyncClient):
     with patch("app.api.v1.tickets.generate_embedding", new_callable=AsyncMock, return_value=None):
         r = await client.get("/api/v1/tickets?search=xyznonexistentquery")
     assert r.json()["total"] == 0
+
+
+def _ticket_for_search(
+    *,
+    title: str,
+    description: str | None = None,
+    status: TicketStatus = TicketStatus.open,
+    priority: TicketPriority = TicketPriority.medium,
+) -> Ticket:
+    now = datetime.now(timezone.utc)
+    return Ticket(
+        id=uuid.uuid4(),
+        title=title,
+        description=description,
+        status=status,
+        priority=priority,
+        author_id=uuid.uuid4(),
+        assignee_id=None,
+        client_url=None,
+        client_summary=None,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+class _FakeScalarResult:
+    def __init__(self, items):
+        self._items = items
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self._items
+
+
+class _FakeSession:
+    def __init__(self, results):
+        self._results = list(results)
+        self.queries = []
+
+    async def execute(self, query):
+        self.queries.append(query)
+        return _FakeScalarResult(self._results.pop(0))
+
+
+async def test_hybrid_search_rrf_promotes_ticket_present_in_both_rankings(test_user: User):
+    both = _ticket_for_search(title="Login bug", description="Login fails after deploy")
+    semantic_only = _ticket_for_search(title="Auth issue", description="Session bug")
+    keyword_only = _ticket_for_search(title="Login UI copy", description="Minor text issue")
+    fake_db = _FakeSession([[semantic_only, both], [both, keyword_only]])
+
+    with (
+        patch("app.api.v1.tickets.cache_get", new=AsyncMock(return_value=None)),
+        patch("app.api.v1.tickets.cache_set", new=AsyncMock()),
+        patch("app.api.v1.tickets.generate_embedding", new=AsyncMock(return_value=[0.1, 0.2])),
+    ):
+        response = await list_tickets(
+            db=fake_db,
+            current_user=test_user,
+            status=None,
+            priority=None,
+            assignee_id=None,
+            search="login",
+            sort_by="created_at",
+            order="desc",
+            page=1,
+            size=10,
+        )
+
+    assert response.total == 3
+    assert [item.id for item in response.items] == [both.id, semantic_only.id, keyword_only.id]
+
+
+async def test_hybrid_search_keeps_keyword_match_without_embedding(test_user: User):
+    semantic_match = _ticket_for_search(title="Authentication problem", description="Conceptually related")
+    no_embedding_keyword_match = _ticket_for_search(title="Login bug", description="Exact keyword match")
+    fake_db = _FakeSession([[semantic_match], [no_embedding_keyword_match]])
+
+    with (
+        patch("app.api.v1.tickets.cache_get", new=AsyncMock(return_value=None)),
+        patch("app.api.v1.tickets.cache_set", new=AsyncMock()),
+        patch("app.api.v1.tickets.generate_embedding", new=AsyncMock(return_value=[0.1, 0.2])),
+    ):
+        response = await list_tickets(
+            db=fake_db,
+            current_user=test_user,
+            status=None,
+            priority=None,
+            assignee_id=None,
+            search="login",
+            sort_by="created_at",
+            order="desc",
+            page=1,
+            size=10,
+        )
+
+    ids = [item.id for item in response.items]
+    assert semantic_match.id in ids
+    assert no_embedding_keyword_match.id in ids
+
+
+async def test_hybrid_search_pages_over_fused_rankings(test_user: User):
+    tickets = [_ticket_for_search(title=f"Login result {i}") for i in range(4)]
+    fake_db = _FakeSession([tickets, tickets])
+
+    with (
+        patch("app.api.v1.tickets.cache_get", new=AsyncMock(return_value=None)),
+        patch("app.api.v1.tickets.cache_set", new=AsyncMock()),
+        patch("app.api.v1.tickets.generate_embedding", new=AsyncMock(return_value=[0.1, 0.2])),
+    ):
+        response = await list_tickets(
+            db=fake_db,
+            current_user=test_user,
+            status=None,
+            priority=None,
+            assignee_id=None,
+            search="login",
+            page=2,
+            sort_by="created_at",
+            order="desc",
+            size=2,
+        )
+
+    assert response.total == 4
+    assert len(response.items) == 2
+    assert [item.id for item in response.items] == [tickets[2].id, tickets[3].id]
 
 
 async def test_list_tickets_pagination(client: AsyncClient):
