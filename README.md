@@ -16,7 +16,7 @@ Hay dos formas de acceder:
   Orbidi@2026Xdesafio
   ```
 
-> **Nota sobre restricción de emails en producción:** el entorno desplegado limita el acceso a cuentas personales (Gmail) y cuentas `@orbidi.com` tal como se solicitó. En un entorno local arrancado desde cero (`ALLOWED_EMAILS` vacío o no configurado) se puede entrar con cualquier cuenta Google.
+> **Nota sobre acceso:** Orbidi solicitó que en entorno local cualquier cuenta Google pueda registrarse y acceder, y así funciona (`ALLOWED_EMAILS` vacío = acceso abierto). El entorno desplegado en producción está restringido por decisión propia a `@orbidi.com` y algunas cuentas personales específicas para evitar registros no deseados durante la evaluación. Si necesitáis acceder con otra cuenta, puedo añadirla sin problema.
 
 Incluye:
 - autenticación con Google OAuth 2.0
@@ -380,7 +380,7 @@ npm run dev
 
 Se puede entrar de dos formas:
 
-- **Google OAuth** — cualquier cuenta Google en local; en producción limitado a cuentas personales y `@orbidi.com`.
+- **Google OAuth** — cualquier cuenta Google en local (sin restricciones, tal como se solicitó); en producción restringido por decisión propia a `@orbidi.com` y algunas cuentas específicas — si necesitáis acceso con otra cuenta, podéis pedírmelo.
 - **Modo demo** — sin necesidad de cuenta Google, usando el código `Orbidi@2026Xdesafio` en la pantalla de login.
 
 Esto evita depender obligatoriamente de una cuenta Google durante la revisión.
