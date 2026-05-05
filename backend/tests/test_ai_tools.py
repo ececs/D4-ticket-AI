@@ -189,7 +189,9 @@ async def test_find_users_tool_returns_single_match_with_email(
 
     result = await find_users_tool.ainvoke({"name": "Test"})
 
-    assert f"Found 1 match: {test_user.name} ({test_user.email})" == result
+    assert f"Found exactly 1 match: {test_user.name} ({test_user.email})." in result
+    assert f"¿Asigno a {test_user.name}?" in result
+    assert f"If the user confirms, call reassign_ticket with this email: {test_user.email}." in result
 
 
 async def test_find_users_tool_returns_multiple_matches_and_prompts_for_confirmation(
@@ -208,7 +210,8 @@ async def test_find_users_tool_returns_multiple_matches_and_prompts_for_confirma
     assert "Found 2 users matching 'Test':" in result
     assert test_user.email in result
     assert second_user.email in result
-    assert "Ask the user to confirm which one." in result
+    assert "Ask the user which full name they mean." in result
+    assert "Only ask for the email if the names are still ambiguous." in result
 
 
 async def test_find_users_tool_returns_helpful_message_when_no_matches(

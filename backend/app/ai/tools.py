@@ -58,7 +58,10 @@ class CreateTicketSchema(BaseModel):
 
 class ReassignTicketSchema(BaseModel):
     ticket_id: str = Field(..., description="UUID of the ticket")
-    assignee_email: str = Field(..., description="Email of the user to assign, or 'unassign' to clear")
+    assignee_email: str = Field(
+        ...,
+        description="Email of the user to assign, or 'unassign' to clear. If find_users returned exactly one confirmed match, use that email from the tool result instead of asking the user for it again."
+    )
 
 class ChangeStatusSchema(BaseModel):
     ticket_id: str = Field(..., description="UUID of the ticket")
@@ -85,7 +88,10 @@ class AIDiagnoseSchema(BaseModel):
     ticket_id: str = Field(..., description="UUID of the ticket to diagnose")
 
 class FindUsersSchema(BaseModel):
-    name: str = Field(..., description="Partial or full name to search for (case-insensitive)")
+    name: str = Field(
+        ...,
+        description="Partial or full name to search for (case-insensitive). Use this before reassigning when the user gives a name instead of an email."
+    )
 
 class DeleteTicketSchema(BaseModel):
     ticket_id: str = Field(..., description="UUID of the ticket to delete")
@@ -305,6 +311,10 @@ def make_tools(db: AsyncSession, actor: User) -> List:
     async def reassign_ticket(ticket_id: str, assignee_email: str) -> str:
         """
         Reassign a ticket to another user by their email.
+        If the user gave you a name instead of an email, call find_users first.
+        When find_users returns exactly one match, ask the user to confirm the full name only.
+        Do not ask the user for the email again in that case: use the email returned by find_users.
+        Only ask for an email when there are multiple plausible matches or no match.
         """
         async with lock:
             try:
@@ -326,7 +336,7 @@ def make_tools(db: AsyncSession, actor: User) -> List:
         """
         Search for users by name (case-insensitive partial match).
         Use this before reassigning a ticket when the user provides a name instead of an email.
-        Returns name + email for each match.
+        Returns name + email for each match so you can confirm by full name first.
         """
         async with lock:
             try:
@@ -338,9 +348,17 @@ def make_tools(db: AsyncSession, actor: User) -> List:
                     return f"No users found matching '{name}'. Ask the user for their exact email."
                 if len(users) == 1:
                     u = users[0]
-                    return f"Found 1 match: {u.name} ({u.email})"
+                    return (
+                        f"Found exactly 1 match: {u.name} ({u.email}). "
+                        f"Ask the user to confirm using the full name only, for example: "
+                        f"'¿Asigno a {u.name}?'. "
+                        f"If the user confirms, call reassign_ticket with this email: {u.email}."
+                    )
                 lines = "\n".join(f"  - {u.name} ({u.email})" for u in users)
-                return f"Found {len(users)} users matching '{name}':\n{lines}\nAsk the user to confirm which one."
+                return (
+                    f"Found {len(users)} users matching '{name}':\n{lines}\n"
+                    "Ask the user which full name they mean. Only ask for the email if the names are still ambiguous."
+                )
             except Exception as e:
                 return f"Error searching users: {e}"
 

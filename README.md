@@ -1,113 +1,457 @@
-# D4-Ticket AI 🎫🤖
-## Sistema de Ticketing Inteligente con IA Generativa y Búsqueda Semántica
+# D4-Ticket AI
 
-[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688.svg?style=flat&logo=FastAPI&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Next.js](https://img.shields.io/badge/Frontend-Next.js%2015-000000.svg?style=flat&logo=next.js&logoColor=white)](https://nextjs.org/)
-[![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-336791.svg?style=flat&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![LangGraph](https://img.shields.io/badge/AI_Orchestrator-LangGraph-FF9900.svg?style=flat)](https://langchain-ai.github.io/langgraph/)
+Aplicación full-stack de ticketing colaborativo desarrollada para la prueba técnica de Orbidi y como proyecto final de DAW.
+Repositorio creado específicamente para esta prueba.
 
-**D4-Ticket AI** es una plataforma de gestión de tickets de alto rendimiento, diseñada para unir flujos de trabajo humanos con automatización de IA. Presenta una arquitectura de nivel senior con un Agente de IA persistente (LangGraph) capaz de consultar, actualizar y resumir tickets usando lenguaje natural, respaldado por un motor de búsqueda semántica (RAG).
+Incluye:
+- autenticación con Google OAuth 2.0
+- vista lista y vista Kanban sobre el mismo conjunto de tickets
+- comentarios, adjuntos y reasignación
+- notificaciones en tiempo real
+- asistente conversacional con IA para consultar y operar sobre tickets
+- búsqueda híbrida (semántica + keyword) con `pgvector`
 
----
-
-### 🚀 Características Principales
-
-*   **🤖 Asistente AI Co-pilot**: Compañero de chat persistente integrado. Usa **Tool Calling** para ejecutar acciones reales (crear/asignar tickets) y **RAG** para responder preguntas basadas en el historial técnico.
-*   **🔍 RAG Dinámico (Web Scraper)**: Cada ticket puede incluir una **URL del Cliente**. El sistema escanea la landing page en segundo plano e indexa su contenido para que la IA proporcione diagnósticos personalizados basados en el contexto real del cliente.
-*   **📋 Tablero Kanban Interactivo**: Gestión visual con drag-and-drop y actualización optimista de estado.
-*   **🔐 Auth Empresarial & Demo**: Integración con Google SSO y un modo **Demo Access** (código secreto) para evaluadores rápidos.
-*   **📎 Adjuntos Inteligentes**: Gestión escalable de archivos con **Cloudflare R2** (S3-compatible).
-*   **⚡ Notificaciones en Tiempo Real**: Alertas in-app instantáneas mediante **WebSockets** y **Redis Pub/Sub** (con fallback a PG-Notify).
-*   **🛡️ Núcleo de IA Resiliente**: Sistema de failover híbrido entre **Gemini 2.0** y **GPT-4o** para garantizar disponibilidad constante.
-
----
-
-### 🛠️ Stack Tecnológico
+## Stack
 
 | Capa | Tecnología |
 | :--- | :--- |
-| **Frontend** | Next.js 15 (App Router), TypeScript, Tailwind CSS, Zustand, Shadcn/UI |
-| **Backend** | FastAPI (Python 3.12), SQLAlchemy 2.0, Pydantic V2 |
-| **IA / LLM** | LangGraph, Gemini 2.0 Flash, OpenAI GPT-4o-mini (Failover) |
-| **Base de Datos**| PostgreSQL + `pgvector` (HNSW Indexing) |
-| **Mensajería** | Redis Pub/Sub |
-| **Storage** | Cloudflare R2 |
+| Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS, Zustand |
+| Backend | FastAPI, SQLAlchemy 2, Pydantic v2, Alembic |
+| Base de datos | PostgreSQL 16 + `pgvector` |
+| Tiempo real | WebSockets + Redis Pub/Sub con fallback a PostgreSQL NOTIFY |
+| Storage | MinIO en local / Cloudflare R2 en producción |
+| IA | LangGraph, Gemini 2.5 Flash, OpenAI GPT-4o-mini como fallback |
 
----
+## Decisiones técnicas
 
-### ⚙️ Levantamiento Local
+- **FastAPI + Next.js**: stack moderno, productivo y fácil de explicar. FastAPI aporta tipado, validación y documentación automática; Next.js resuelve bien App Router, cliente/servidor y una UI reactiva.
+- **Persistencia real desde el primer momento**: el proyecto no usa mocks ni almacenamiento efímero. Toda la lógica trabaja sobre PostgreSQL, lo que facilita defender consistencia, migraciones y relaciones.
+- **PostgreSQL + pgvector para búsqueda híbrida**: la búsqueda semántica por sí sola puede perder coincidencias literales útiles; la búsqueda keyword por sí sola pierde contexto. Por eso la búsqueda final combina ambas señales con Reciprocal Rank Fusion.
+- **Redis + PG NOTIFY como fallback**: Redis se usa para Pub/Sub y sincronización en tiempo real. Cuando Redis no está disponible, la aplicación degrada a PostgreSQL NOTIFY para no romper el sistema.
+- **MinIO en local / Cloudflare R2 en producción**: ambos exponen API S3-compatible, así que el mismo código de adjuntos sirve en desarrollo y despliegue real.
+- **Asistente IA con tool calling**: el chat no toca la base de datos “por libre”; reutiliza servicios y endpoints del propio sistema. Esto reduce duplicación y ayuda a que UI e IA respeten las mismas reglas.
+- **Permisos conservadores en acciones destructivas**: cualquier usuario autenticado puede colaborar, comentar o reasignar, pero el borrado queda restringido al autor del ticket. Si otro usuario lo intenta, puede solicitar el borrado al autor mediante notificación.
+- **Historial de actividad persistente**: se guarda el cambio relevante del ticket (estado, prioridad, asignación, etc.) para poder explicar qué pasó y también para dar contexto al asistente.
 
-El sistema está diseñado para ser agnóstico al entorno, pero se recomienda el uso de **Docker** para una experiencia "zero-config" de los servicios de infraestructura (Postgres, Redis, MinIO).
+## Arquitectura resumida
 
-#### Opción A: Docker Compose (Recomendado 🚀)
-Esta opción levanta todo el stack (Frontend, Backend, DB, Redis, MinIO) con un solo comando.
+### Backend
 
-1.  **Configurar Entorno**:
-    ```bash
-    cp .env.example .env
-    # Edita .env y añade al menos tu GOOGLE_API_KEY
-    ```
-2.  **Iniciar el Stack**:
-    ```bash
-    docker-compose up --build
-    ```
-3.  **Acceso**:
-    -   Frontend: [http://localhost:3000](http://localhost:3000)
-    -   Backend API: [http://localhost:8000](http://localhost:8000)
-    -   Documentación API: [http://localhost:8000/docs](http://localhost:8000/docs)
-    -   Consola MinIO (Storage): [http://localhost:9001](http://localhost:9001)
+- `FastAPI` organiza la API por routers (`tickets`, `comments`, `attachments`, `notifications`, `auth`, `ai`).
+- `SQLAlchemy 2` modela entidades y relaciones.
+- `Alembic` versiona cambios de esquema.
+- La lógica de dominio se concentra en servicios (`ticket_service`, `notification_service`, `comment_service`, etc.) para mantener routers finos.
 
-#### Opción B: Ejecución Manual (Desarrollo)
-Si prefieres correr el código fuera de Docker (por ejemplo, para depuración profunda):
+### Frontend
 
-**Backend**:
+- `Next.js App Router` para estructura de aplicación.
+- `Zustand` para estado compartido ligero:
+  - usuario autenticado
+  - notificaciones
+  - selección de tickets
+  - estado del chat IA
+- Componentes separados por responsabilidad: tablero, detalle, notificaciones, chat, formularios.
+
+### Tiempo real
+
+- El backend emite eventos WebSocket para:
+  - `ticket_created`
+  - `ticket_updated`
+  - `ticket_deleted`
+  - `notification`
+  - `notification_read`
+  - `notifications_read_all`
+- El frontend actualiza estado local o hace refetch parcial según el tipo de evento.
+
+### IA
+
+- El agente está construido con `LangGraph`.
+- Las capacidades se exponen como tools:
+  - consultar tickets
+  - crear tickets
+  - cambiar estado
+  - añadir comentarios
+  - reasignar
+  - actualizar
+  - consultar historial
+  - borrar con confirmación humana
+- Para temas documentales o contexto cliente, el agente usa búsqueda sobre base de conocimiento.
+
+## Qué está implementado
+
+- login con Google
+- modo demo para evaluadores
+- CRUD de tickets
+- filtros, ordenación y paginación
+- vista Kanban con drag & drop
+- comentarios
+- adjuntos con límite de 10 MB
+- reasignación
+- notificaciones in-app con badge de no leídas
+- sincronización multi-pestaña
+- historial de actividad del ticket
+- asistente IA con creación, consulta, cambio de estado, comentario, reasignación y borrado asistido
+
+## Comportamientos relevantes
+
+### Reasignación
+
+- La reasignación está disponible desde la UI y desde el asistente.
+- Si el usuario pide reasignar por nombre, el asistente busca coincidencias:
+  - si hay una sola coincidencia, confirma por nombre completo
+  - si hay varias, pide aclaración
+  - solo pide email cuando sigue habiendo ambigüedad o no encuentra a nadie
+
+### Borrado de tickets
+
+- Solo el autor puede borrar un ticket.
+- Si otro usuario intenta borrarlo:
+  - la UI lo impide
+  - el asistente tampoco lo ejecuta
+  - el sistema puede enviar una notificación al autor para pedirle que lo elimine
+
+### Notificaciones
+
+- Hay notificaciones por asignación, comentario, cambio relevante de ticket y solicitud de borrado.
+- Se pueden marcar como leídas, marcar todas como leídas y borrar individualmente.
+- La sincronización entre pestañas del mismo usuario está soportada.
+
+## Levantamiento local
+
+Hay dos formas de arrancar el proyecto:
+
+1. **Docker Compose**: la más rápida y recomendable para validarlo desde cero.
+2. **Manual**: útil si quieres depurar backend/frontend por separado.
+
+### Opción A: Docker Compose
+
+#### Requisitos
+
+- Docker Desktop o Docker Engine + Compose
+- una API key de Google AI Studio si se quiere usar el asistente completo
+
+#### Qué levanta Docker Compose
+
+- PostgreSQL 16 + `pgvector`
+- Redis
+- MinIO
+- backend FastAPI
+- frontend Next.js
+
+#### Pasos
+
+1. Crear el archivo de entorno raíz:
+
+```bash
+cp .env.example .env
+```
+
+2. Editar `.env` y completar como mínimo:
+
+- `SECRET_KEY`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_API_KEY`
+
+Opcionales pero recomendables:
+
+- `OPENAI_API_KEY` para fallback del agente
+- `DEMO_ACCESS_CODE` para acceso rápido del evaluador
+- `ALLOWED_EMAILS` si se quiere restringir quién puede entrar
+
+Si no quieres depender de Google OAuth durante la revisión, configura también:
+
+- `DEMO_ACCESS_CODE`
+
+Con eso, el evaluador puede entrar desde la pantalla de login usando el código demo sin necesidad de configurar Google OAuth en su entorno.
+
+3. Levantar el stack:
+
+```bash
+docker-compose up --build
+```
+
+El backend aplica automáticamente:
+
+```bash
+alembic upgrade head
+```
+
+al arrancar el contenedor, así que no hace falta ejecutar migraciones a mano en Docker.
+
+#### Servicios disponibles
+
+- Frontend: [http://localhost:3000](http://localhost:3000)
+- Backend: [http://localhost:8000](http://localhost:8000)
+- Swagger: [http://localhost:8000/docs](http://localhost:8000/docs)
+- MinIO Console: [http://localhost:9001](http://localhost:9001)
+- PostgreSQL expuesto en host: `localhost:5433`
+
+#### Notas
+
+- En Docker local se usa **MinIO** como storage S3-compatible.
+- El frontend usa `NEXT_PUBLIC_API_URL=http://localhost:8000`.
+- El contenedor backend ejecuta migraciones al arrancar, incluyendo las últimas del enum de notificaciones.
+- Si cambias el esquema local, `docker-compose up` volverá a ejecutar `alembic upgrade head` de forma segura.
+
+#### Validación rápida tras arrancar
+
+1. Abrir [http://localhost:3000](http://localhost:3000)
+2. Entrar por Google o modo demo
+3. Crear un ticket
+4. Verificar que aparece en lista y Kanban
+5. Abrir [http://localhost:8000/docs](http://localhost:8000/docs) para comprobar que la API está operativa
+
+### Opción B: Ejecución manual
+
+#### Requisitos
+
+- Python 3.12
+- Node.js 22+
+- npm
+- PostgreSQL 16 con extensión `pgvector`
+- Redis
+- MinIO o cualquier storage S3-compatible para adjuntos
+
+#### 1. Infraestructura local
+
+Si quieres ejecutar solo backend y frontend fuera de Docker, puedes seguir usando Docker para la infraestructura:
+
+```bash
+docker-compose up -d db redis minio
+```
+
+#### 2. Configurar backend
+
+Crear archivo de entorno del backend:
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+Valores importantes para ejecución manual:
+
+- `DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5433/ticketai`
+- `REDIS_URL=redis://localhost:6379`
+- `STORAGE_ENDPOINT=http://localhost:9000`
+- `FRONTEND_URL=http://localhost:3000`
+- `BACKEND_URL=http://localhost:8000`
+- `GOOGLE_API_KEY=...`
+- `OPENAI_API_KEY=...` si quieres activar fallback del agente
+- `DEMO_ACCESS_CODE=...` si quieres login demo
+
+Instalar dependencias y lanzar:
+
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate  # (ó .\.venv\Scripts\activate en Windows)
-pip install -e .
+source .venv/bin/activate
+pip install -U pip uv
+uv pip install --python .venv/bin/python -e ".[dev]"
 alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-**Frontend**:
+Notas:
+
+- `alembic upgrade head` es obligatorio también en manual.
+- Sí hay migraciones recientes en el proyecto, incluida una para el tipo de notificación `deletion_requested`.
+- El backend lee `backend/.env` cuando se ejecuta desde la carpeta `backend`.
+
+#### 3. Configurar frontend
+
+Asegúrate de que `frontend/.env.local` contiene al menos:
+
+```bash
+cat > frontend/.env.local <<'EOF'
+NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+NEXT_PUBLIC_FRONTEND_URL=http://localhost:3000
+EOF
+```
+
+Instalar y lanzar:
+
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
----
+#### URLs
 
-### 🔑 Variables de Entorno Clave
+- Frontend: [http://localhost:3000](http://localhost:3000)
+- Backend: [http://localhost:8000](http://localhost:8000)
 
-| Variable | Descripción | Valor Local (Docker) |
-| :--- | :--- | :--- |
-| `DATABASE_URL` | Conexión a Postgres | `postgresql+asyncpg://postgres:postgres@db:5432/ticketai` |
-| `REDIS_URL` | Conexión a Redis | `redis://redis:6379` |
-| `GOOGLE_API_KEY` | Key de Google AI Studio | *Tu API Key* |
-| `DEMO_ACCESS_CODE`| Código para modo demo | `orbidi2024` (por defecto) |
+## Variables de entorno más importantes
 
----
+### Backend
 
-### 🧠 Transparencia IA
-En el desarrollo de este proyecto se han utilizado herramientas de IA generativa siguiendo las mejores prácticas de la industria:
-*   **Gemini 2.0 Flash / GPT-4o**: Utilizados para el diseño de la arquitectura del Agente (LangGraph), generación de esquemas Pydantic y revisión de seguridad de endpoints.
-*   **Antigravity / GPT**: Utilizados para el scaffolding inicial del frontend y la automatización del proceso de despliegue (CI/CD).
-*   **Propósito**: Todas las decisiones técnicas han sido supervisadas y validadas por el autor para garantizar la robustez y mantenibilidad del sistema.
+| Variable | Descripción |
+| :--- | :--- |
+| `DATABASE_URL` | conexión async a PostgreSQL |
+| `REDIS_URL` | conexión a Redis |
+| `SECRET_KEY` | firma de JWT |
+| `GOOGLE_CLIENT_ID` | OAuth Google |
+| `GOOGLE_CLIENT_SECRET` | OAuth Google |
+| `FRONTEND_URL` | URL del frontend |
+| `BACKEND_URL` | URL pública del backend |
+| `GOOGLE_API_KEY` | Gemini / embeddings |
+| `OPENAI_API_KEY` | fallback del agente |
+| `STORAGE_ENDPOINT` | MinIO o R2 |
+| `STORAGE_ACCESS_KEY` | credencial S3 |
+| `STORAGE_SECRET_KEY` | credencial S3 |
+| `STORAGE_BUCKET` | bucket de adjuntos |
+| `DEMO_ACCESS_CODE` | acceso demo opcional |
 
-### 🤝 Uso de IA Durante el Desarrollo
+### Frontend
+
+| Variable | Descripción |
+| :--- | :--- |
+| `NEXT_PUBLIC_API_URL` | URL base del backend |
+| `NEXT_PUBLIC_FRONTEND_URL` | URL pública del frontend |
+
+## Base de datos y migraciones
+
+- El proyecto usa `Alembic` para versionar cambios de esquema.
+- El backend ejecuta `alembic upgrade head` al arrancar en Docker.
+- En ejecución manual hay que lanzarlo explícitamente antes de iniciar FastAPI.
+- La base de datos incluye:
+  - tablas de tickets, comentarios, adjuntos, usuarios y notificaciones
+  - historial de actividad
+  - soporte `pgvector`
+  - ajustes para preservar histórico cuando un ticket se elimina
+
+## Acceso para evaluación
+
+Se puede entrar de dos formas:
+
+- **Google OAuth**
+- **Modo demo** si se configura `DEMO_ACCESS_CODE`
+
+Esto evita depender obligatoriamente de una cuenta Google durante la revisión.
+
+## Qué probar rápidamente si se levanta desde cero
+
+Si estás validando una instalación limpia, esta secuencia cubre lo importante:
+
+1. login
+2. crear ticket
+3. moverlo en Kanban
+4. editar prioridad o descripción
+5. añadir comentario
+6. subir adjunto
+7. abrir notificaciones
+8. usar el asistente para consultar o actualizar un ticket
+9. abrir una segunda pestaña y comprobar sincronización en tiempo real
+
+## Checklist de validación recomendada
+
+Además del arranque técnico, esta es la comprobación funcional que considero más útil antes de entregar o revisar:
+
+### Backend y arranque
+
+- ejecutar `alembic upgrade head`
+- abrir Swagger en `/docs`
+- ejecutar `uv run pytest tests -q`
+
+### Frontend
+
+- ejecutar `npm run lint`
+- ejecutar `npm run type-check`
+- ejecutar `npm run build`
+
+### Flujo funcional mínimo
+
+- login
+- crear ticket
+- comprobar que aparece en lista y Kanban
+- reasignar ticket
+- cambiar estado
+- añadir comentario
+- subir y eliminar adjunto
+- abrir notificaciones y marcar como leídas
+- abrir una segunda pestaña y verificar sincronización
+- usar el asistente para consultar y modificar un ticket
+- probar borrado con confirmación humana
+
+### Casos importantes de UX
+
+- estado vacío sin tickets
+- estado vacío con filtros activos
+- rollback visual ante error de borrado
+- vista lista en horizontal con scroll
+- board y chat en móvil
+- toasts y panel IA sin solapamientos en móvil
+
+## Comandos útiles
+
+### Backend
+
+```bash
+uv run pytest tests -q
+```
+
+También útiles:
+
+```bash
+cd backend
+alembic current
+alembic history
+```
+
+### Frontend
+
+```bash
+npm run lint
+npm run type-check
+npm run build
+```
+
+## Estado actual del asistente IA
+
+El asistente es una mejora funcional real del sistema, no solo una demo textual.
+
+Actualmente puede:
+
+- consultar tickets con filtros
+- crear tickets
+- cambiar estado
+- añadir comentarios
+- reasignar tickets
+- actualizar campos
+- revisar historial
+- pedir borrado con confirmación humana
+
+Además:
+
+- usa contexto del ticket abierto o tickets seleccionados
+- puede apoyarse en búsqueda documental
+- respeta permisos del sistema
+
+## Trade-offs aceptados
+
+- La confirmación de acciones sensibles se resuelve en frontend, no con `interrupt/resume` persistente del grafo.
+- El identificador visible del ticket es un fragmento de UUID, no un contador secuencial.
+- El estado del frontend usa hooks y Zustand ligeros en vez de React Query para mantener el proyecto más fácil de explicar y defender en entrevista.
+- Algunas decisiones de UX y permisos son deliberadamente conservadoras para priorizar estabilidad y claridad en una prueba técnica de una semana.
+
+## Uso de IA durante el desarrollo
+
 Durante el desarrollo se utilizaron herramientas de IA generativa como apoyo puntual en tareas de productividad y revisión técnica. En concreto:
 
-*   **Scaffolding y aceleración inicial**: generación de borradores de código para algunas piezas del frontend y backend.
-*   **Testing**: propuesta y ampliación de casos de prueba, incluyendo validaciones y regresiones.
-*   **Revisión técnica**: apoyo en detección de edge cases, validaciones de entrada y ajustes de robustez.
-*   **Documentación**: ayuda en redacción y refinado del README y documentación auxiliar.
+- **Scaffolding inicial** de algunas piezas del frontend y backend.
+- **Generación y ampliación de tests** de regresión y validaciones.
+- **Revisión de código** para detectar edge cases, incoherencias y mejoras de robustez.
+- **Documentación** y refinado del README.
 
-Todos los cambios fueron revisados, adaptados e integrados manualmente en el contexto real del proyecto. Ningún fragmento se incorporó sin validación funcional posterior mediante revisión de código, ejecución local y batería de tests.
+Todas las decisiones de arquitectura, integración, permisos, validaciones y comportamiento final fueron revisadas manualmente. Ningún fragmento se incorporó sin adaptación al contexto del proyecto y validación posterior mediante ejecución local y batería de tests.
 
----
+## Limitaciones / mejoras futuras
 
-### 📜 Licencia
-Desarrollado como reto técnico para **Orbidi** y proyecto final de **DAW**.
-Todos los derechos reservados.
+- El asistente IA usa confirmaciones en frontend para acciones sensibles; no implementa un `interrupt/resume` persistente del grafo.
+- El identificador visible del ticket sigue derivándose del UUID; una mejora natural sería añadir un `ticket_number` secuencial.
+- La búsqueda híbrida funciona sobre tickets; una extensión futura sería indexar también documentación PDF del cliente.
+
+## Licencia
+
+Proyecto desarrollado como reto técnico para **Orbidi** y proyecto final de **DAW**.
