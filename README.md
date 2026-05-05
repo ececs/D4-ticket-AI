@@ -74,8 +74,10 @@ Incluye:
   - reasignar
   - actualizar
   - consultar historial
+  - buscar usuarios por nombre para reasignación asistida
   - borrar con confirmación humana
 - Para temas documentales o contexto cliente, el agente usa búsqueda sobre base de conocimiento.
+- Además del chat general, el detalle del ticket incluye un **botón de diagnóstico IA** que genera un análisis específico para ese ticket usando su información estructurada y el contexto disponible.
 
 ## Qué está implementado
 
@@ -91,6 +93,8 @@ Incluye:
 - sincronización multi-pestaña
 - historial de actividad del ticket
 - asistente IA con creación, consulta, cambio de estado, comentario, reasignación y borrado asistido
+- diagnóstico IA específico desde el detalle del ticket
+- enriquecimiento contextual mediante URL del cliente y resumen/manual notes del operador
 
 ## Comportamientos relevantes
 
@@ -101,6 +105,27 @@ Incluye:
   - si hay una sola coincidencia, confirma por nombre completo
   - si hay varias, pide aclaración
   - solo pide email cuando sigue habiendo ambigüedad o no encuentra a nadie
+
+### Diagnóstico IA y contexto
+
+- Cada ticket puede incluir una **URL del cliente** (`client_url`).
+- El sistema puede analizar esa web en segundo plano y guardar contexto extraído para enriquecer el diagnóstico.
+- El ticket también permite guardar un **resumen manual del cliente** o notas operativas (`client_summary`) para añadir contexto de negocio o técnico que no está en la web.
+- Desde el detalle del ticket hay un **botón de diagnóstico IA** que genera un análisis específico del caso usando:
+  - título y descripción
+  - estado y prioridad
+  - historial del ticket
+  - contexto extraído de la web del cliente
+  - contexto manual añadido por el operador
+
+### RAG
+
+- El proyecto usa un enfoque de **RAG aplicado al soporte**.
+- La base de conocimiento puede combinar:
+  - contenido extraído de la web del cliente
+  - contexto estructurado del propio ticket
+  - historial de cambios
+- El objetivo no es solo responder preguntas generales, sino ayudar a que la IA diagnostique mejor cada incidencia con contexto real del cliente.
 
 ### Borrado de tickets
 
@@ -344,6 +369,8 @@ Si estás validando una instalación limpia, esta secuencia cubre lo importante:
 8. usar el asistente para consultar o actualizar un ticket
 9. abrir una segunda pestaña y comprobar sincronización en tiempo real
 
+Antes de la entrega se realizó además una validación manual final de funcionalidad, responsividad, flujos del asistente, sincronización en tiempo real y casos límite relevantes del sistema.
+
 ## Checklist de validación recomendada
 
 Además del arranque técnico, esta es la comprobación funcional que considero más útil antes de entregar o revisar:
@@ -421,6 +448,9 @@ Actualmente puede:
 - actualizar campos
 - revisar historial
 - pedir borrado con confirmación humana
+- apoyarse en contexto documental y del cliente para responder mejor
+
+Además del chat, existe una acción específica de **Diagnóstico IA** en el detalle del ticket para obtener un análisis más centrado en ese caso concreto.
 
 Además:
 
