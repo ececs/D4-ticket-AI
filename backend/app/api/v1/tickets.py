@@ -96,19 +96,48 @@ async def list_tickets(
     if assignee_id is not None:
         query = query.where(Ticket.assignee_id == assignee_id)
 
-    semantic = False
     if search:
         search_embedding = await generate_embedding(search, task_type="RETRIEVAL_QUERY")
         if search_embedding is not None:
-            # Semantic: order by cosine distance to the query vector.
-            # Only considers tickets that already have an embedding stored.
-            query = query.where(Ticket.embedding.isnot(None))  # type: ignore[attr-defined]
-            query = query.order_by(
-                Ticket.embedding.cosine_distance(search_embedding)  # type: ignore[attr-defined]
+            # ── Hybrid search: RRF(semantic, keyword) ──────────────────────────
+            # Fetch up to POOL candidates from each source, then fuse with
+            # Reciprocal Rank Fusion: score = 1/(rank + K) summed across sources.
+            # This surfaces exact-match titles AND conceptually similar tickets.
+            POOL = 100
+            K = 60  # standard RRF constant
+
+            pattern = f"%{search}%"
+            sem_q = (
+                query.where(Ticket.embedding.isnot(None))  # type: ignore[attr-defined]
+                .order_by(Ticket.embedding.cosine_distance(search_embedding))  # type: ignore[attr-defined]
+                .limit(POOL)
             )
-            semantic = True
+            kw_q = (
+                query.where(Ticket.title.ilike(pattern) | Ticket.description.ilike(pattern))
+                .limit(POOL)
+            )
+
+            sem_rows = (await db.execute(sem_q)).scalars().all()
+            kw_rows = (await db.execute(kw_q)).scalars().all()
+
+            rrf: dict = {}
+            for i, t in enumerate(sem_rows):
+                rrf[t.id] = rrf.get(t.id, 0.0) + 1.0 / (i + K)
+            for i, t in enumerate(kw_rows):
+                rrf[t.id] = rrf.get(t.id, 0.0) + 1.0 / (i + K)
+
+            pool = {t.id: t for t in (*sem_rows, *kw_rows)}
+            ranked = sorted(rrf, key=rrf.__getitem__, reverse=True)
+
+            total = len(ranked)
+            page_ids = ranked[(page - 1) * size: page * size]
+            tickets = [pool[i] for i in page_ids]
+
+            response = TicketListResponse(items=list(tickets), total=total, page=page, size=size)
+            await cache_set(cache_key, response.model_dump(mode="json"), ttl=CACHE_TTL)
+            return response
         else:
-            # Keyword fallback — ilike on title and description
+            # Embedding unavailable — keyword-only fallback (same as before)
             pattern = f"%{search}%"
             query = query.where(
                 Ticket.title.ilike(pattern) | Ticket.description.ilike(pattern)
@@ -117,11 +146,8 @@ async def list_tickets(
     count_query = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_query)).scalar_one()
 
-    # When doing semantic search the ORDER BY is already set by cosine distance.
-    # For regular queries apply the requested sort column.
-    if not semantic:
-        sort_column = SORTABLE_COLUMNS.get(sort_by, Ticket.created_at)
-        query = query.order_by(sort_column.desc() if order == "desc" else sort_column.asc())
+    sort_column = SORTABLE_COLUMNS.get(sort_by, Ticket.created_at)
+    query = query.order_by(sort_column.desc() if order == "desc" else sort_column.asc())
 
     offset = (page - 1) * size
     query = query.offset(offset).limit(size)
