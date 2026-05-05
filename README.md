@@ -41,7 +41,7 @@ Incluye:
 ## Decisiones técnicas
 
 - **FastAPI + Next.js**: stack moderno, productivo y con un excelente equilibrio entre velocidad de desarrollo y mantenibilidad. FastAPI aporta tipado, validación y documentación automática; Next.js resuelve bien App Router, cliente/servidor y una UI reactiva.
-- **Persistencia real desde el primer momento**: el proyecto no usa mocks ni almacenamiento efímero. Toda la lógica trabaja sobre PostgreSQL, lo que facilita defender consistencia, migraciones y relaciones.
+- **Persistencia real desde el primer momento**: el proyecto no usa mocks ni almacenamiento efímero. Toda la lógica trabaja sobre PostgreSQL, lo que garantiza la integridad referencial, la consistencia de los datos y un control de versiones robusto del esquema mediante migraciones.
 - **PostgreSQL + pgvector para búsqueda híbrida**: la búsqueda semántica por sí sola puede perder coincidencias literales útiles; la búsqueda keyword por sí sola pierde contexto. Por eso la búsqueda final combina ambas señales con Reciprocal Rank Fusion.
 - **Redis + PG NOTIFY como fallback**: Redis se usa para Pub/Sub y sincronización en tiempo real. Cuando Redis no está disponible, la aplicación degrada a PostgreSQL NOTIFY para no romper el sistema.
 - **MinIO en local / Cloudflare R2 en producción**: ambos exponen API S3-compatible, así que el mismo código de adjuntos sirve en desarrollo y despliegue real.
