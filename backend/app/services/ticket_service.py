@@ -46,17 +46,17 @@ async def hybrid_search_tickets(
     K = 60
 
     search_embedding = await generate_embedding(search, task_type="RETRIEVAL_QUERY")
+    keyword_rank = case(
+        (func.lower(Ticket.title) == search.lower(), 0),
+        (Ticket.title.ilike(pattern), 1),
+        else_=2,
+    )
 
     if search_embedding is not None:
         sem_q = (
             base_query.where(Ticket.embedding.isnot(None))  # type: ignore[attr-defined]
             .order_by(Ticket.embedding.cosine_distance(search_embedding))  # type: ignore[attr-defined]
             .limit(pool)
-        )
-        keyword_rank = case(
-            (func.lower(Ticket.title) == search.lower(), 0),
-            (Ticket.title.ilike(pattern), 1),
-            else_=2,
         )
         kw_q = (
             base_query.where(Ticket.title.ilike(pattern) | Ticket.description.ilike(pattern))
@@ -80,6 +80,7 @@ async def hybrid_search_tickets(
     # Embedding unavailable — keyword-only fallback
     kw_q = (
         base_query.where(Ticket.title.ilike(pattern) | Ticket.description.ilike(pattern))
+        .order_by(keyword_rank, Ticket.updated_at.desc())
         .limit(pool)
     )
     return list((await db.execute(kw_q)).scalars().all())

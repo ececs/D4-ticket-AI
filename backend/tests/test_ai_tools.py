@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.ai.tools import make_tools
-from app.models.ticket import Ticket, TicketPriority
+from app.models.ticket import Ticket, TicketPriority, TicketStatus
 from app.models.ticket_history import TicketHistory
 from app.models.user import User
 
@@ -135,3 +135,46 @@ async def test_get_ticket_history_tool_returns_empty_message_when_no_entries(
     result = await history_tool.ainvoke({"ticket_id": str(uuid.uuid4())})
 
     assert result == "No history found for this ticket."
+
+
+async def test_query_tickets_tool_uses_shared_hybrid_search_when_search_present(
+    db_session,
+    test_user: User,
+):
+    tools = make_tools(db_session, test_user)
+    query_tool = next(tool for tool in tools if tool.name == "query_tickets")
+    returned_ticket = Ticket(
+        id=uuid.uuid4(),
+        title="Login bug",
+        description="Shared search result",
+        priority=TicketPriority.high,
+        status=TicketStatus.open,
+        author_id=test_user.id,
+    )
+
+    with patch(
+        "app.ai.tools.ticket_service.hybrid_search_tickets",
+        new=AsyncMock(return_value=[returned_ticket]),
+    ) as mock_hybrid:
+        result = await query_tool.ainvoke({"search": "login", "limit": 5})
+
+    mock_hybrid.assert_awaited_once()
+    assert "Login bug" in result
+    assert "[high]" in result
+
+
+async def test_query_tickets_tool_returns_validation_error_for_invalid_status_without_service_call(
+    db_session,
+    test_user: User,
+):
+    tools = make_tools(db_session, test_user)
+    query_tool = next(tool for tool in tools if tool.name == "query_tickets")
+
+    with patch(
+        "app.ai.tools.ticket_service.hybrid_search_tickets",
+        new=AsyncMock(),
+    ) as mock_hybrid:
+        result = await query_tool.ainvoke({"search": "login", "status": "broken"})
+
+    mock_hybrid.assert_not_called()
+    assert result == "Invalid status 'broken'."
