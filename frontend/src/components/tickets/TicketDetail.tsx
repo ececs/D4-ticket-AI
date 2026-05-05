@@ -232,7 +232,13 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
 
   // ── Attachments ──────────────────────────────────────────────────────────
 
+  const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB — must match backend MAX_ATTACHMENT_SIZE_MB
+
   const uploadFile = async (file: File) => {
+    if (file.size > MAX_FILE_BYTES) {
+      setUploadError("File exceeds the 10 MB limit");
+      return;
+    }
     setIsUploading(true);
     setUploadError(null);
     const form = new FormData();
@@ -241,7 +247,10 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
       const { data: att } = await api.post<Attachment>(
         `/tickets/${ticketId}/attachments`,
         form,
-        { headers: { "Content-Type": "multipart/form-data" } }
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+          timeout: 120000, // 2 min — large files need more than the default 10 s
+        }
       );
       setAttachments((prev) => [...prev, att]);
     } catch (err: unknown) {
