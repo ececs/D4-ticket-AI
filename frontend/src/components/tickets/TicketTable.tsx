@@ -216,7 +216,7 @@ export function TicketTable({
       {/* Table */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
-        <table className="min-w-[920px] w-full text-sm">
+        <table className="min-w-[980px] w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
               <th className="px-4 py-3 w-10 min-w-10">
@@ -230,6 +230,9 @@ export function TicketTable({
                     : <Square className="w-4 h-4" />
                   }
                 </button>
+              </th>
+              <th className="text-left px-4 py-3 min-w-[96px]">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Ref</span>
               </th>
               <th className="text-left px-4 py-3 min-w-[280px]" aria-sort={sortBy === "title" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
                 <ColHeader field="title" label="Title" />
@@ -321,13 +324,17 @@ export function TicketTable({
                       }
                     </button>
                   </td>
+                  {/* Ticket ref */}
+                  <td className="px-4 py-3 whitespace-nowrap text-xs font-mono text-slate-400">
+                    #{ticket.id.slice(0, 6)}
+                  </td>
                   {/* Title */}
                   <td className="px-4 py-3">
-                    <span className="font-medium text-slate-800 group-hover:text-blue-600 transition-colors line-clamp-1">
+                    <span
+                      title={ticket.title}
+                      className="block line-clamp-2 font-medium text-slate-800 transition-colors group-hover:text-blue-600"
+                    >
                       {ticket.title}
-                    </span>
-                    <span className="text-xs text-slate-400 font-mono ml-2">
-                      #{ticket.id.slice(0, 6)}
                     </span>
                   </td>
 
