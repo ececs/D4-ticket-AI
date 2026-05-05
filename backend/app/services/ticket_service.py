@@ -20,12 +20,69 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from sqlalchemy import case, func
 from app.models.ticket import Ticket, TicketStatus, TicketPriority
 from app.models.user import User
 from app.schemas.ticket import TicketOut
 import asyncio
 import logging
 from . import notification_service, embedding_service, scraping_service, cache_service, history_service
+
+
+async def hybrid_search_tickets(
+    db: AsyncSession,
+    base_query,
+    search: str,
+    pool: int = 100,
+) -> list[Ticket]:
+    """
+    RRF(semantic, keyword) over base_query (filters already applied by caller).
+    Returns raw Ticket models ranked by fused score, up to pool entries.
+    Falls back to keyword-only if the embedding service is unavailable.
+    """
+    from app.services.embedding_service import generate_embedding
+
+    pattern = f"%{search}%"
+    K = 60
+
+    search_embedding = await generate_embedding(search, task_type="RETRIEVAL_QUERY")
+
+    if search_embedding is not None:
+        sem_q = (
+            base_query.where(Ticket.embedding.isnot(None))  # type: ignore[attr-defined]
+            .order_by(Ticket.embedding.cosine_distance(search_embedding))  # type: ignore[attr-defined]
+            .limit(pool)
+        )
+        keyword_rank = case(
+            (func.lower(Ticket.title) == search.lower(), 0),
+            (Ticket.title.ilike(pattern), 1),
+            else_=2,
+        )
+        kw_q = (
+            base_query.where(Ticket.title.ilike(pattern) | Ticket.description.ilike(pattern))
+            .order_by(keyword_rank, Ticket.updated_at.desc())
+            .limit(pool)
+        )
+
+        sem_rows = (await db.execute(sem_q)).scalars().all()
+        kw_rows = (await db.execute(kw_q)).scalars().all()
+
+        rrf: dict = {}
+        for i, t in enumerate(sem_rows):
+            rrf[t.id] = rrf.get(t.id, 0.0) + 1.0 / (i + K)
+        for i, t in enumerate(kw_rows):
+            rrf[t.id] = rrf.get(t.id, 0.0) + 1.0 / (i + K)
+
+        ticket_map = {t.id: t for t in (*sem_rows, *kw_rows)}
+        ranked = sorted(rrf, key=rrf.__getitem__, reverse=True)
+        return [ticket_map[i] for i in ranked]
+
+    # Embedding unavailable — keyword-only fallback
+    kw_q = (
+        base_query.where(Ticket.title.ilike(pattern) | Ticket.description.ilike(pattern))
+        .limit(pool)
+    )
+    return list((await db.execute(kw_q)).scalars().all())
 
 
 async def get_ticket(db: AsyncSession, ticket_id: uuid.UUID) -> Optional[TicketOut]:

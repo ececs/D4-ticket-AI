@@ -101,39 +101,43 @@ def make_tools(db: AsyncSession, actor: User) -> List:
         logger.info(f"AI Tool: query_tickets(status={status}, priority={priority}, search={search})")
         async with lock:
             try:
-                stmt = select(Ticket)
+                base = select(Ticket)
                 if status:
                     try:
-                        stmt = stmt.where(Ticket.status == TicketStatus(status))
+                        base = base.where(Ticket.status == TicketStatus(status))
                     except ValueError:
                         return f"Invalid status '{status}'."
                 if priority:
                     try:
-                        stmt = stmt.where(Ticket.priority == TicketPriority(priority))
+                        base = base.where(Ticket.priority == TicketPriority(priority))
                     except ValueError:
                         return f"Invalid priority '{priority}'."
-                if search:
-                    stmt = stmt.where(Ticket.title.ilike(f"%{search}%"))
 
-                # Sort by priority (Critical > High > Medium > Low) then by oldest first (FIFO)
-                priority_order = case(
-                    (Ticket.priority == TicketPriority.critical, 1),
-                    (Ticket.priority == TicketPriority.high, 2),
-                    (Ticket.priority == TicketPriority.medium, 3),
-                    (Ticket.priority == TicketPriority.low, 4),
-                    else_=5
-                )
-                stmt = stmt.limit(limit).order_by(priority_order, Ticket.created_at.asc())
-                
-                logger.info(f"Executing query_tickets with limit {limit}")
-                result = await db.execute(stmt)
-                tickets = result.scalars().all()
-                logger.info(f"Query finished, found {len(tickets)} tickets")
+                if search:
+                    # Hybrid search (same engine as the UI table)
+                    tickets = await ticket_service.hybrid_search_tickets(db, base, search, pool=limit * 5)
+                    tickets = tickets[:limit]
+                else:
+                    # No search — sort by priority (Critical first) then oldest first (FIFO)
+                    priority_order = case(
+                        (Ticket.priority == TicketPriority.critical, 1),
+                        (Ticket.priority == TicketPriority.high, 2),
+                        (Ticket.priority == TicketPriority.medium, 3),
+                        (Ticket.priority == TicketPriority.low, 4),
+                        else_=5,
+                    )
+                    result = await db.execute(
+                        base.order_by(priority_order, Ticket.created_at.asc()).limit(limit)
+                    )
+                    tickets = result.scalars().all()
 
                 if not tickets:
                     return "No tickets found with the specified filters."
 
-                return "\n".join([f"  [{t.status.value}] [{t.priority.value}] {t.title} (ID: {t.id})" for t in tickets])
+                return "\n".join([
+                    f"  [{t.status.value}] [{t.priority.value}] {t.title} (ID: {t.id})"
+                    for t in tickets
+                ])
             except Exception as e:
                 return f"Error: {e}"
 

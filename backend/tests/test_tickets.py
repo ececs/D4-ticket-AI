@@ -179,7 +179,7 @@ async def test_list_tickets_search_by_title(client: AsyncClient):
     await _create_ticket(client, title="Performance improvement")
 
     # Mock embedding to None to trigger ilike fallback (pgvector not in SQLite)
-    with patch("app.api.v1.tickets.generate_embedding", new_callable=AsyncMock, return_value=None):
+    with patch("app.services.embedding_service.generate_embedding", new_callable=AsyncMock, return_value=None):
         r = await client.get("/api/v1/tickets?search=login")
     items = r.json()["items"]
     assert len(items) == 1
@@ -190,7 +190,7 @@ async def test_list_tickets_search_by_description(client: AsyncClient):
     await _create_ticket(client, title="Issue A", description="database migration fails")
     await _create_ticket(client, title="Issue B", description="UI rendering glitch")
 
-    with patch("app.api.v1.tickets.generate_embedding", new_callable=AsyncMock, return_value=None):
+    with patch("app.services.embedding_service.generate_embedding", new_callable=AsyncMock, return_value=None):
         r = await client.get("/api/v1/tickets?search=migration")
     assert r.json()["total"] == 1
 
@@ -198,7 +198,7 @@ async def test_list_tickets_search_by_description(client: AsyncClient):
 async def test_list_tickets_search_no_match_returns_empty(client: AsyncClient):
     await _create_ticket(client, title="Unrelated title")
 
-    with patch("app.api.v1.tickets.generate_embedding", new_callable=AsyncMock, return_value=None):
+    with patch("app.services.embedding_service.generate_embedding", new_callable=AsyncMock, return_value=None):
         r = await client.get("/api/v1/tickets?search=xyznonexistentquery")
     assert r.json()["total"] == 0
 
@@ -256,7 +256,7 @@ async def test_hybrid_search_rrf_promotes_ticket_present_in_both_rankings(test_u
     with (
         patch("app.api.v1.tickets.cache_get", new=AsyncMock(return_value=None)),
         patch("app.api.v1.tickets.cache_set", new=AsyncMock()),
-        patch("app.api.v1.tickets.generate_embedding", new=AsyncMock(return_value=[0.1, 0.2])),
+        patch("app.services.embedding_service.generate_embedding", new=AsyncMock(return_value=[0.1, 0.2])),
     ):
         response = await list_tickets(
             db=fake_db,
@@ -283,7 +283,7 @@ async def test_hybrid_search_keeps_keyword_match_without_embedding(test_user: Us
     with (
         patch("app.api.v1.tickets.cache_get", new=AsyncMock(return_value=None)),
         patch("app.api.v1.tickets.cache_set", new=AsyncMock()),
-        patch("app.api.v1.tickets.generate_embedding", new=AsyncMock(return_value=[0.1, 0.2])),
+        patch("app.services.embedding_service.generate_embedding", new=AsyncMock(return_value=[0.1, 0.2])),
     ):
         response = await list_tickets(
             db=fake_db,
@@ -310,7 +310,7 @@ async def test_hybrid_search_pages_over_fused_rankings(test_user: User):
     with (
         patch("app.api.v1.tickets.cache_get", new=AsyncMock(return_value=None)),
         patch("app.api.v1.tickets.cache_set", new=AsyncMock()),
-        patch("app.api.v1.tickets.generate_embedding", new=AsyncMock(return_value=[0.1, 0.2])),
+        patch("app.services.embedding_service.generate_embedding", new=AsyncMock(return_value=[0.1, 0.2])),
     ):
         response = await list_tickets(
             db=fake_db,

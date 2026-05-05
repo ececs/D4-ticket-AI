@@ -27,7 +27,7 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import case, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import CurrentUser, DB
@@ -35,7 +35,7 @@ from app.models.ticket import Ticket, TicketPriority, TicketStatus
 from app.models.user import User
 from app.schemas.ticket import TicketCreate, TicketListResponse, TicketOut, TicketUpdate
 from app.services.cache_service import cache_get, cache_set, cache_invalidate_prefix
-from app.services.embedding_service import generate_embedding, generate_ticket_embedding
+from app.services.embedding_service import generate_ticket_embedding
 from app.services import ticket_service, notification_service, ai_copilot_service, scraping_service
 from app.schemas.websocket import WSMessageType
 from app.models.knowledge_chunk import KnowledgeChunk
@@ -100,57 +100,12 @@ async def list_tickets(
         query = query.where(Ticket.assignee_id == assignee_id)
 
     if search:
-        search_embedding = await generate_embedding(search, task_type="RETRIEVAL_QUERY")
-        if search_embedding is not None:
-            # ── Hybrid search: RRF(semantic, keyword) ──────────────────────────
-            # Fetch up to POOL candidates from each source, then fuse with
-            # Reciprocal Rank Fusion: score = 1/(rank + K) summed across sources.
-            # This surfaces exact-match titles AND conceptually similar tickets.
-            POOL = 100
-            K = 60  # standard RRF constant
-
-            pattern = f"%{search}%"
-            sem_q = (
-                query.where(Ticket.embedding.isnot(None))  # type: ignore[attr-defined]
-                .order_by(Ticket.embedding.cosine_distance(search_embedding))  # type: ignore[attr-defined]
-                .limit(POOL)
-            )
-            keyword_rank = case(
-                (func.lower(Ticket.title) == search.lower(), 0),
-                (Ticket.title.ilike(pattern), 1),
-                else_=2,
-            )
-            kw_q = (
-                query.where(Ticket.title.ilike(pattern) | Ticket.description.ilike(pattern))
-                .order_by(keyword_rank, Ticket.updated_at.desc())
-                .limit(POOL)
-            )
-
-            sem_rows = (await db.execute(sem_q)).scalars().all()
-            kw_rows = (await db.execute(kw_q)).scalars().all()
-
-            rrf: dict = {}
-            for i, t in enumerate(sem_rows):
-                rrf[t.id] = rrf.get(t.id, 0.0) + 1.0 / (i + K)
-            for i, t in enumerate(kw_rows):
-                rrf[t.id] = rrf.get(t.id, 0.0) + 1.0 / (i + K)
-
-            pool = {t.id: t for t in (*sem_rows, *kw_rows)}
-            ranked = sorted(rrf, key=rrf.__getitem__, reverse=True)
-
-            total = len(ranked)
-            page_ids = ranked[(page - 1) * size: page * size]
-            tickets = [pool[i] for i in page_ids]
-
-            response = TicketListResponse(items=list(tickets), total=total, page=page, size=size)
-            await cache_set(cache_key, response.model_dump(mode="json"), ttl=CACHE_TTL)
-            return response
-        else:
-            # Embedding unavailable — keyword-only fallback (same as before)
-            pattern = f"%{search}%"
-            query = query.where(
-                Ticket.title.ilike(pattern) | Ticket.description.ilike(pattern)
-            )
+        ranked = await ticket_service.hybrid_search_tickets(db, query, search)
+        total = len(ranked)
+        tickets = ranked[(page - 1) * size: page * size]
+        response = TicketListResponse(items=list(tickets), total=total, page=page, size=size)
+        await cache_set(cache_key, response.model_dump(mode="json"), ttl=CACHE_TTL)
+        return response
 
     count_query = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_query)).scalar_one()
