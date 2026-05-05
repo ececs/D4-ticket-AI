@@ -215,10 +215,11 @@ export function TicketTable({
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="min-w-[920px] w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              <th className="px-4 py-3 w-10">
+              <th className="px-4 py-3 w-10 min-w-10">
                 <button
                   onClick={handleSelectAll}
                   aria-label={selectedTicketIds.length === tickets.length && tickets.length > 0 ? "Deseleccionar todos" : "Seleccionar todos"}
@@ -230,22 +231,22 @@ export function TicketTable({
                   }
                 </button>
               </th>
-              <th className="text-left px-4 py-3" aria-sort={sortBy === "title" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+              <th className="text-left px-4 py-3 min-w-[280px]" aria-sort={sortBy === "title" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
                 <ColHeader field="title" label="Title" />
               </th>
-              <th className="text-left px-4 py-3" aria-sort={sortBy === "status" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+              <th className="text-left px-4 py-3 min-w-[140px]" aria-sort={sortBy === "status" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
                 <ColHeader field="status" label="Status" />
               </th>
-              <th className="text-left px-4 py-3" aria-sort={sortBy === "priority" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+              <th className="text-left px-4 py-3 min-w-[130px]" aria-sort={sortBy === "priority" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
                 <ColHeader field="priority" label="Priority" />
               </th>
-              <th className="text-left px-4 py-3 hidden md:table-cell">
+              <th className="text-left px-4 py-3 min-w-[190px]">
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Assignee</span>
               </th>
-              <th className="text-left px-4 py-3 hidden lg:table-cell" aria-sort={sortBy === "created_at" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+              <th className="text-left px-4 py-3 min-w-[190px]" aria-sort={sortBy === "created_at" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
                 <ColHeader field="created_at" label="Created" />
               </th>
-              <th className="px-4 py-3" />
+              <th className="px-4 py-3 min-w-[88px]" />
             </tr>
           </thead>
 
@@ -345,7 +346,7 @@ export function TicketTable({
                   </td>
 
                   {/* Assignee */}
-                  <td className="px-4 py-3 hidden md:table-cell">
+                  <td className="px-4 py-3">
                      {ticket.assignee ? (
                       <div className="flex items-center gap-2">
                         <UserAvatar 
@@ -361,7 +362,7 @@ export function TicketTable({
                   </td>
 
                   {/* Created at */}
-                  <td className="px-4 py-3 hidden lg:table-cell text-slate-500">
+                  <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
                     <span>{formatDateTime(ticket.created_at)}</span>
                     <span className="block text-xs text-slate-400">{timeAgo(ticket.created_at)}</span>
                   </td>
@@ -391,6 +392,7 @@ export function TicketTable({
               ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Pagination */}
