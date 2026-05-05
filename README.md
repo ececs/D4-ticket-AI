@@ -220,7 +220,7 @@ Si no quieres depender de Google OAuth durante la revisión, configura también:
 
 Con eso, el evaluador puede entrar desde la pantalla de login usando el código demo sin necesidad de configurar Google OAuth en su entorno.
 
-3. Levantar el stack:
+3. Levantar el stack (desde la raíz del proyecto):
 
 ```bash
 docker-compose up --build
