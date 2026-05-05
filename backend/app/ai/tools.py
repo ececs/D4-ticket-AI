@@ -19,6 +19,7 @@ Available Tools:
 import uuid
 import logging
 import asyncio
+import unicodedata
 from typing import Optional, List, Type
 from pydantic import BaseModel, Field
 
@@ -32,6 +33,15 @@ from app.models.comment import Comment
 from app.services import ticket_service, notification_service, knowledge_service, comment_service, scraping_service, history_service
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize(s: str) -> str:
+    """Lowercase + strip diacritics so 'lucia' matches 'Lucía'."""
+    return "".join(
+        c for c in unicodedata.normalize("NFD", s.lower())
+        if unicodedata.category(c) != "Mn"
+    )
+
 
 # --- Pydantic Schemas for Tool Arguments ---
 
@@ -340,10 +350,9 @@ def make_tools(db: AsyncSession, actor: User) -> List:
         """
         async with lock:
             try:
-                result = await db.execute(
-                    select(User).where(User.name.ilike(f"%{name}%")).order_by(User.name)
-                )
-                users = result.scalars().all()
+                needle = _normalize(name)
+                result = await db.execute(select(User).order_by(User.name))
+                users = [u for u in result.scalars().all() if needle in _normalize(u.name)]
                 if not users:
                     return f"No users found matching '{name}'. Ask the user for their exact email."
                 if len(users) == 1:
