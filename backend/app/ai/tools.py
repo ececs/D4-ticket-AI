@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 def _normalize(s: str) -> str:
-    """Lowercase + strip diacritics so 'lucia' matches 'Lucía'."""
+    """Lowercase + strip diacritics for accent-insensitive comparison."""
     return "".join(
         c for c in unicodedata.normalize("NFD", s.lower())
         if unicodedata.category(c) != "Mn"
