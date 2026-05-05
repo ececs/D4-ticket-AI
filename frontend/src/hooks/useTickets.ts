@@ -77,7 +77,10 @@ export function useTickets(filters: TicketFilters = {}): UseTicketsReturn {
         .then(({ data }) => {
           setTickets((prev) => {
             const exists = prev.some((t) => t.id === data.id);
-            if (!exists) { refetch(); return prev; }
+            if (!exists) {
+              setTotal((n) => n + 1);
+              return [data, ...prev];
+            }
             return prev.map((t) => (t.id === data.id ? data : t));
           });
         })

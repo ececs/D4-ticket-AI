@@ -23,9 +23,9 @@ export function ConfirmDialog({
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onCancel()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 animate-in fade-in" />
+        <Dialog.Overlay className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[210] animate-in fade-in" />
         <Dialog.Content
-          className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in fade-in zoom-in-95"
+          className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[220] bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in fade-in zoom-in-95"
           aria-describedby="confirm-description"
         >
           <div className="flex flex-col items-center text-center gap-4">

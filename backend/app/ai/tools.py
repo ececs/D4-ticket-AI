@@ -84,6 +84,9 @@ class SearchKnowledgeSchema(BaseModel):
 class AIDiagnoseSchema(BaseModel):
     ticket_id: str = Field(..., description="UUID of the ticket to diagnose")
 
+class FindUsersSchema(BaseModel):
+    name: str = Field(..., description="Partial or full name to search for (case-insensitive)")
+
 class DeleteTicketSchema(BaseModel):
     ticket_id: str = Field(..., description="UUID of the ticket to delete")
 
@@ -318,6 +321,29 @@ def make_tools(db: AsyncSession, actor: User) -> List:
             except Exception as e:
                 return f"Error reassigning ticket: {e}"
 
+    @tool(args_schema=FindUsersSchema)
+    async def find_users(name: str) -> str:
+        """
+        Search for users by name (case-insensitive partial match).
+        Use this before reassigning a ticket when the user provides a name instead of an email.
+        Returns name + email for each match.
+        """
+        async with lock:
+            try:
+                result = await db.execute(
+                    select(User).where(User.name.ilike(f"%{name}%")).order_by(User.name)
+                )
+                users = result.scalars().all()
+                if not users:
+                    return f"No users found matching '{name}'. Ask the user for their exact email."
+                if len(users) == 1:
+                    u = users[0]
+                    return f"Found 1 match: {u.name} ({u.email})"
+                lines = "\n".join(f"  - {u.name} ({u.email})" for u in users)
+                return f"Found {len(users)} users matching '{name}':\n{lines}\nAsk the user to confirm which one."
+            except Exception as e:
+                return f"Error searching users: {e}"
+
     @tool(args_schema=DeleteTicketSchema)
     async def delete_ticket(ticket_id: str) -> str:
         """
@@ -349,6 +375,7 @@ def make_tools(db: AsyncSession, actor: User) -> List:
         change_status,
         add_comment,
         update_ticket,
+        find_users,
         reassign_ticket,
         search_knowledge,
         ai_diagnose_ticket,

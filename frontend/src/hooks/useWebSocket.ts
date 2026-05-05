@@ -74,8 +74,11 @@ export function useWebSocket(token: string | null) {
               break;
 
             case "ticket_created":
-              // Global refresh when a new ticket is added
-              triggerRefresh("*"); 
+              if (data && data.id) {
+                triggerRefresh(String(data.id));
+              } else {
+                triggerRefresh("*");
+              }
               break;
 
             case "web_scrape_completed":
