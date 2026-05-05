@@ -1,7 +1,22 @@
 # D4-Ticket AI
 
-Aplicación full-stack de ticketing colaborativo desarrollada para la prueba técnica de Orbidi y como proyecto final de DAW.
+Aplicación full-stack de ticketing colaborativo desarrollada para la prueba técnica de Orbidi.
 Repositorio creado específicamente para esta prueba.
+
+## Demo en producción
+
+**URL:** [https://frontend-eight-chi-54.vercel.app/board](https://frontend-eight-chi-54.vercel.app/board)
+
+Hay dos formas de acceder:
+
+- **Google OAuth** — disponible para cuentas personales Gmail y para cuentas del dominio `@orbidi.com`.
+- **Modo demo** — acceso inmediato sin cuenta Google usando el código:
+
+  ```
+  Orbidi@2026Xdesafio
+  ```
+
+> **Nota sobre restricción de emails en producción:** el entorno desplegado limita el acceso a cuentas personales (Gmail) y cuentas `@orbidi.com` tal como se solicitó. En un entorno local arrancado desde cero (`ALLOWED_EMAILS` vacío o no configurado) se puede entrar con cualquier cuenta Google.
 
 Incluye:
 - autenticación con Google OAuth 2.0
@@ -63,6 +78,19 @@ Incluye:
   - `notifications_read_all`
 - El frontend actualiza estado local o hace refetch parcial según el tipo de evento.
 
+Los eventos emitidos son:
+
+| Evento | Descripción |
+| :--- | :--- |
+| `ticket_created` | un ticket nuevo fue creado |
+| `ticket_updated` | un ticket fue modificado |
+| `ticket_deleted` | un ticket fue eliminado |
+| `notification` | notificación nueva para el usuario |
+| `notification_read` | una notificación fue marcada como leída |
+| `notification_deleted` | una notificación fue eliminada |
+| `notifications_read_all` | todas las notificaciones marcadas como leídas |
+| `web_scrape_completed` | el análisis de la URL del cliente finalizó |
+
 ### IA
 
 - El agente está construido con `LangGraph`.
@@ -76,6 +104,7 @@ Incluye:
   - consultar historial
   - buscar usuarios por nombre para reasignación asistida
   - borrar con confirmación humana
+  - diagnóstico IA específico del ticket (análisis centrado en ese caso concreto)
 - Para temas documentales o contexto cliente, el agente usa búsqueda sobre base de conocimiento.
 - Además del chat general, el detalle del ticket incluye un **botón de diagnóstico IA** que genera un análisis específico para ese ticket usando su información estructurada y el contexto disponible.
 
@@ -327,6 +356,7 @@ npm run dev
 | `STORAGE_SECRET_KEY` | credencial S3 |
 | `STORAGE_BUCKET` | bucket de adjuntos |
 | `DEMO_ACCESS_CODE` | acceso demo opcional |
+| `ALLOWED_EMAILS` | lista de emails o dominios autorizados para login (vacío = cualquier cuenta Google) |
 
 ### Frontend
 
@@ -350,10 +380,23 @@ npm run dev
 
 Se puede entrar de dos formas:
 
-- **Google OAuth**
-- **Modo demo** si se configura `DEMO_ACCESS_CODE`
+- **Google OAuth** — cualquier cuenta Google en local; en producción limitado a cuentas personales y `@orbidi.com`.
+- **Modo demo** — sin necesidad de cuenta Google, usando el código `Orbidi@2026Xdesafio` en la pantalla de login.
 
 Esto evita depender obligatoriamente de una cuenta Google durante la revisión.
+
+### Datos de prueba
+
+Para poblar la instancia de producción con datos realistas, hay un script incluido:
+
+```bash
+# 1. Abre la consola del navegador (F12) tras hacer login y ejecuta:
+#    document.cookie.match(/access_token=([^;]+)/)?.[1]
+# 2. Copia el token y ejecuta:
+TOKEN=<pega_aquí_el_token> python3 seed_data.py
+```
+
+El script crea tickets, comentarios y relaciones representativas sobre la instancia desplegada en Railway.
 
 ## Qué probar rápidamente si se levanta desde cero
 
@@ -484,4 +527,4 @@ Todas las decisiones de arquitectura, integración, permisos, validaciones y com
 
 ## Licencia
 
-Proyecto desarrollado como reto técnico para **Orbidi** y proyecto final de **DAW**.
+Proyecto desarrollado como reto técnico para **Orbidi**.
