@@ -267,15 +267,25 @@ async def broadcast_global_event(
     db: Optional[AsyncSession] = None
 ) -> None:
     """
-    Push a real-time event to ALL connected users via the WebSocket manager.
-    Used for board-wide events (ticket created, deleted) so every user's UI stays in sync.
+    Push a real-time event to ALL connected users.
+    Uses Redis Pub/Sub when available and PG NOTIFY fallback otherwise, so the
+    broadcast works across multiple workers/processes.
     """
     from app.schemas.websocket import WSMessage
-    from app.core.websocket_manager import manager
+    from app.services import pubsub_service
 
     ws_msg = WSMessage(type=type, data=data)
     logger.info("Global broadcast: type=%s", type.value)
-    await manager.broadcast_to_all(ws_msg)
+    event = ws_msg.model_dump(mode="json")
+    event["user_id"] = "*"
+
+    if pubsub_service.is_redis_available():
+        await pubsub_service.publish(event)
+    elif db is not None:
+        await _pg_notify(db, "*", event)
+        await db.commit()  # flush PG NOTIFY fallback
+    else:
+        logger.warning("Global broadcast skipped: no Redis and no DB session provided.")
 
 
 async def broadcast_live_update(

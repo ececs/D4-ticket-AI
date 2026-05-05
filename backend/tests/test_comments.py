@@ -1,10 +1,12 @@
 import uuid
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.comment import Comment
+from app.schemas.websocket import WSMessageType
 from app.models.user import User
 
 
@@ -93,6 +95,21 @@ async def test_delete_comment_removes_it(client: AsyncClient):
 
     comments = (await client.get(f"/api/v1/tickets/{ticket['id']}/comments")).json()
     assert all(c["id"] != comment["id"] for c in comments)
+
+
+async def test_delete_comment_broadcasts_ticket_updated_sync_event(client: AsyncClient):
+    ticket = await _create_ticket(client)
+    comment = await _create_comment(client, ticket["id"])
+
+    with patch(
+        "app.services.notification_service.broadcast_global_event",
+        new_callable=AsyncMock,
+    ) as mock_broadcast:
+        response = await client.delete(f"/api/v1/tickets/{ticket['id']}/comments/{comment['id']}")
+
+    assert response.status_code == 204
+    mock_broadcast.assert_awaited_once()
+    assert mock_broadcast.await_args.kwargs["type"] == WSMessageType.TICKET_UPDATED
 
 
 async def test_delete_other_users_comment_returns_403(

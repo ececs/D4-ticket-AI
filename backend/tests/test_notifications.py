@@ -145,6 +145,27 @@ async def test_mark_notification_read(client: AsyncClient):
     assert target["read"] is True
 
 
+async def test_mark_notification_read_broadcasts_notification_read_event(
+    client: AsyncClient,
+):
+    ticket = await _create_ticket(client)
+    await client.patch(f"/api/v1/tickets/{ticket['id']}", json={"status": "closed"})
+
+    notifications = (await client.get("/api/v1/notifications")).json()
+    notification_id = notifications[0]["id"]
+
+    with patch(
+        "app.services.notification_service._publish_user_event",
+        new_callable=AsyncMock,
+    ) as mock_publish:
+        response = await client.patch(f"/api/v1/notifications/{notification_id}/read")
+
+    assert response.status_code == 200
+    ws_msg = mock_publish.await_args.args[2]
+    assert ws_msg.type == WSMessageType.NOTIFICATION_READ
+    assert ws_msg.data["id"] == notification_id
+
+
 async def test_delete_notification_removes_it(client: AsyncClient):
     ticket = await _create_ticket(client)
     await client.patch(f"/api/v1/tickets/{ticket['id']}", json={"status": "closed"})
@@ -255,6 +276,27 @@ async def test_broadcast_notifications_read_all_commits_after_pg_notify_fallback
         )
 
     mock_pg_notify.assert_awaited_once()
+    db_session.commit.assert_awaited_once()
+
+
+async def test_broadcast_global_event_commits_after_pg_notify_fallback(
+    db_session: AsyncSession,
+):
+    original_commit = db_session.commit
+    db_session.commit = AsyncMock(wraps=original_commit)  # type: ignore[method-assign]
+
+    with (
+        patch("app.services.notification_service.pubsub_service.is_redis_available", return_value=False),
+        patch("app.services.notification_service._pg_notify", new_callable=AsyncMock) as mock_pg_notify,
+    ):
+        await notification_service.broadcast_global_event(
+            type=WSMessageType.TICKET_UPDATED,
+            data={"id": str(uuid.uuid4())},
+            db=db_session,
+        )
+
+    mock_pg_notify.assert_awaited_once()
+    assert mock_pg_notify.await_args.args[1] == "*"
     db_session.commit.assert_awaited_once()
 
 

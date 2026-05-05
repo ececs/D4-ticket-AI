@@ -143,7 +143,10 @@ async def _pg_listen_loop() -> None:
             data = json.loads(payload)
             user_id = data.get("user_id")
             if user_id:
-                await manager.broadcast_to_user(user_id, data)
+                if user_id == "*":
+                    await manager.broadcast_to_all(data)
+                else:
+                    await manager.broadcast_to_user(user_id, data)
         except Exception as e:
             logger.error(f"WebSocket Listener: Failed to process notification: {str(e)}")
 

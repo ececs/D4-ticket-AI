@@ -80,7 +80,10 @@ async def redis_listen_loop() -> None:
                 # Validate the rest as a WSMessage
                 from app.schemas.websocket import WSMessage
                 ws_msg = WSMessage(**raw_data)
-                await manager.broadcast_to_user(str(user_id), ws_msg)
+                if user_id == "*":
+                    await manager.broadcast_to_all(ws_msg)
+                else:
+                    await manager.broadcast_to_user(str(user_id), ws_msg)
             except Exception as exc:
                 logger.debug("Error processing pub/sub message: %s", exc)
     except asyncio.CancelledError:
