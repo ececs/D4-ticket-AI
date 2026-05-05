@@ -357,6 +357,8 @@ def make_tools(db: AsyncSession, actor: User) -> List:
                 ticket = result.scalar_one_or_none()
                 if not ticket:
                     return "Ticket not found."
+                if ticket.author_id != actor.id:
+                    return f"__DELETE_REQUEST_OFFER__:{ticket_id}:{ticket.title}"
                 title = ticket.title
             except ValueError:
                 return f"Invalid ticket ID: {ticket_id}"

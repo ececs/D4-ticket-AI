@@ -17,9 +17,11 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.tickets import list_tickets
+from app.models.notification import Notification, NotificationType
 from app.models.ticket import Ticket, TicketPriority, TicketStatus
 from app.models.user import User
 
@@ -100,6 +102,51 @@ async def test_create_ticket_with_client_url(client: AsyncClient):
 async def test_create_ticket_without_auth_returns_401(unauth_client: AsyncClient):
     r = await unauth_client.post("/api/v1/tickets", json={"title": "T"})
     assert r.status_code == 401
+
+
+# ── DELETION REQUESTS ────────────────────────────────────────────────────────
+
+async def test_non_author_can_request_ticket_deletion_without_deleting_ticket(
+    db_session: AsyncSession,
+    second_client: AsyncClient,
+    test_user: User,
+    second_user: User,
+):
+    ticket = Ticket(
+        title="Needs author review",
+        description="Created directly for permission testing.",
+        priority=TicketPriority.medium,
+        author_id=test_user.id,
+    )
+    db_session.add(ticket)
+    await db_session.commit()
+
+    response = await second_client.post(f"/api/v1/tickets/{ticket.id}/deletion-request")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+    stored_ticket = await db_session.get(Ticket, ticket.id)
+    assert stored_ticket is not None
+
+    notifications = (
+        await db_session.execute(
+            select(Notification).where(Notification.type == NotificationType.deletion_requested)
+        )
+    ).scalars().all()
+    assert len(notifications) == 1
+    assert notifications[0].user_id == test_user.id
+    assert notifications[0].ticket_id == ticket.id
+    assert second_user.name in notifications[0].message
+
+
+async def test_author_cannot_request_deletion_of_own_ticket(client: AsyncClient):
+    ticket = await _create_ticket(client, title="Own deletion request")
+
+    response = await client.post(f"/api/v1/tickets/{ticket['id']}/deletion-request")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "You are the author of this ticket. You can delete it directly."
 
 
 # ── LIST ──────────────────────────────────────────────────────────────────────

@@ -162,6 +162,26 @@ async def notify_ticket_deleted(
     )
 
 
+async def notify_ticket_deletion_requested(
+    db: AsyncSession,
+    ticket: Ticket,
+    requester: User,
+) -> None:
+    """
+    Notify the ticket author that another user asked them to delete the ticket.
+    """
+    if ticket.author_id == requester.id:
+        return
+
+    await _create_notification(
+        db,
+        user_id=ticket.author_id,
+        notification_type=NotificationType.deletion_requested,
+        ticket_id=ticket.id,
+        message=f'{requester.name} requested deletion of "{ticket.title}"',
+    )
+
+
 async def notify_ticket_assigned(
     db: AsyncSession,
     ticket: Ticket,

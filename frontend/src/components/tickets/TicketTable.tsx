@@ -15,6 +15,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import api from "@/lib/api";
 import { Ticket, TicketFilters, TicketPriority, TicketStatus, User } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
@@ -22,6 +23,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { STATUS_LABELS, PRIORITY_CONFIG, timeAgo, formatDateTime } from "@/lib/utils";
 import { ChevronUp, ChevronDown, ChevronsUpDown, Trash2, ExternalLink, CheckSquare, Square, ClipboardList, SearchX } from "lucide-react";
 import { useSelectionStore } from "@/stores/useSelectionStore";
+import { useToast } from "@/hooks/use-toast";
 
 const STATUSES: TicketStatus[] = ["open", "in_progress", "in_review", "closed"];
 const PRIORITIES: TicketPriority[] = ["low", "medium", "high", "critical"];
@@ -56,9 +58,11 @@ export function TicketTable({
   users = [],
 }: TicketTableProps) {
   const router = useRouter();
+  const { toast } = useToast();
   const [sortBy, setSortBy] = useState<SortField | undefined>(undefined);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [pendingDeleteRequest, setPendingDeleteRequest] = useState<{ id: string; title: string } | null>(null);
 
   const handleSort = (field: SortField) => {
     const newDir = sortBy === field && sortDir === "desc" ? "asc" : "desc";
@@ -91,9 +95,39 @@ export function TicketTable({
     if (id) {
       try {
         await onDeleteTicket(id);
-      } catch {
-        // deleteTicket already shows a toast and rolls back the UI on failure
+      } catch (err) {
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        if (status === 403) {
+          const ticket = tickets.find((item) => item.id === id);
+          setPendingDeleteRequest({
+            id,
+            title: ticket?.title ?? "this ticket",
+          });
+        }
       }
+    }
+  };
+
+  const handleConfirmDeleteRequest = async () => {
+    if (!pendingDeleteRequest) return;
+    const { id, title } = pendingDeleteRequest;
+    try {
+      await fetchDeleteRequest(id);
+      toast({
+        title: "Request sent",
+        description: `The author has been notified about "${title}".`,
+      });
+    } catch (err) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        "Could not send the request right now.";
+      toast({
+        variant: "destructive",
+        title: "Request failed",
+        description: detail,
+      });
+    } finally {
+      setPendingDeleteRequest(null);
     }
   };
 
@@ -390,6 +424,18 @@ export function TicketTable({
         onConfirm={handleConfirmDelete}
         onCancel={() => setPendingDeleteId(null)}
       />
+      <ConfirmDialog
+        open={!!pendingDeleteRequest}
+        title="Only the author can delete this ticket"
+        description={`You do not have permission to delete "${pendingDeleteRequest?.title}". Do you want to notify the author and ask them to delete it?`}
+        confirmLabel="Send request"
+        onConfirm={handleConfirmDeleteRequest}
+        onCancel={() => setPendingDeleteRequest(null)}
+      />
     </div>
   );
+}
+
+async function fetchDeleteRequest(ticketId: string): Promise<void> {
+  await api.post(`/tickets/${ticketId}/deletion-request`);
 }

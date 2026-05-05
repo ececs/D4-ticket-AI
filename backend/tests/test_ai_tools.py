@@ -178,3 +178,68 @@ async def test_query_tickets_tool_returns_validation_error_for_invalid_status_wi
 
     mock_hybrid.assert_not_called()
     assert result == "Invalid status 'broken'."
+
+
+async def test_find_users_tool_returns_single_match_with_email(
+    db_session,
+    test_user: User,
+):
+    tools = make_tools(db_session, test_user)
+    find_users_tool = next(tool for tool in tools if tool.name == "find_users")
+
+    result = await find_users_tool.ainvoke({"name": "Test"})
+
+    assert f"Found 1 match: {test_user.name} ({test_user.email})" == result
+
+
+async def test_find_users_tool_returns_multiple_matches_and_prompts_for_confirmation(
+    db_session,
+    test_user: User,
+    second_user: User,
+):
+    second_user.name = "Test Operator"
+    await db_session.commit()
+
+    tools = make_tools(db_session, test_user)
+    find_users_tool = next(tool for tool in tools if tool.name == "find_users")
+
+    result = await find_users_tool.ainvoke({"name": "Test"})
+
+    assert "Found 2 users matching 'Test':" in result
+    assert test_user.email in result
+    assert second_user.email in result
+    assert "Ask the user to confirm which one." in result
+
+
+async def test_find_users_tool_returns_helpful_message_when_no_matches(
+    db_session,
+    test_user: User,
+):
+    tools = make_tools(db_session, test_user)
+    find_users_tool = next(tool for tool in tools if tool.name == "find_users")
+
+    result = await find_users_tool.ainvoke({"name": "NoSuchUser"})
+
+    assert result == "No users found matching 'NoSuchUser'. Ask the user for their exact email."
+
+
+async def test_delete_ticket_tool_offers_author_notification_when_actor_cannot_delete(
+    db_session,
+    test_user: User,
+    second_user: User,
+):
+    ticket = Ticket(
+        title="Protected ticket",
+        description="Only the author should be able to delete it.",
+        priority=TicketPriority.medium,
+        author_id=second_user.id,
+    )
+    db_session.add(ticket)
+    await db_session.commit()
+
+    tools = make_tools(db_session, test_user)
+    delete_tool = next(tool for tool in tools if tool.name == "delete_ticket")
+
+    result = await delete_tool.ainvoke({"ticket_id": str(ticket.id)})
+
+    assert result == f"__DELETE_REQUEST_OFFER__:{ticket.id}:{ticket.title}"

@@ -93,7 +93,8 @@ export type NotificationType =
   | "commented"
   | "status_changed"
   | "ticket_updated"
-  | "ticket_deleted";
+  | "ticket_deleted"
+  | "deletion_requested";
 
 export interface Notification {
   id: string;

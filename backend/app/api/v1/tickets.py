@@ -221,6 +221,29 @@ async def delete_ticket(ticket_id: uuid.UUID, db: DB, current_user: CurrentUser)
     await cache_invalidate_prefix(CACHE_PREFIX)
 
 
+@router.post("/{ticket_id}/deletion-request", summary="Ask the author to delete a ticket")
+async def request_ticket_deletion(ticket_id: uuid.UUID, db: DB, current_user: CurrentUser):
+    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    if ticket.author_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You are the author of this ticket. You can delete it directly.",
+        )
+
+    await notification_service.notify_ticket_deletion_requested(
+        db,
+        ticket=ticket,
+        requester=current_user,
+    )
+    await db.commit()
+
+    return {"ok": True}
+
+
 from fastapi.responses import StreamingResponse
 
 @router.get("/{ticket_id}/diagnosis")

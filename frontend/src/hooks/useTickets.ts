@@ -18,6 +18,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import api from "@/lib/api";
+import { integrateCreatedTicket } from "@/lib/ticketRealtime";
 import useNotificationStore from "@/stores/notificationStore";
 import { useToast } from "./use-toast";
 import { Ticket, TicketFilters, TicketListResponse, TicketStatus, TicketUpdate } from "@/types";
@@ -78,8 +79,15 @@ export function useTickets(filters: TicketFilters = {}): UseTicketsReturn {
           setTickets((prev) => {
             const exists = prev.some((t) => t.id === data.id);
             if (!exists) {
-              setTotal((n) => n + 1);
-              return [data, ...prev];
+              const merged = integrateCreatedTicket(prev, data, filters);
+              if (merged.needsRefetch) {
+                refetch();
+                return prev;
+              }
+              if (merged.totalDelta !== 0) {
+                setTotal((n) => n + merged.totalDelta);
+              }
+              return merged.tickets;
             }
             return prev.map((t) => (t.id === data.id ? data : t));
           });
@@ -92,7 +100,7 @@ export function useTickets(filters: TicketFilters = {}): UseTicketsReturn {
       // Fallback: Full refresh for general events
       refetch();
     }
-  }, [refreshSignal, lastTicketId, deletedTicketId, refetch]);
+  }, [refreshSignal, lastTicketId, deletedTicketId, filters, refetch]);
 
   useEffect(() => {
     let cancelled = false;
@@ -175,6 +183,10 @@ export function useTickets(filters: TicketFilters = {}): UseTicketsReturn {
     } catch (err) {
       setTickets(snapshot);
       setTotal((n) => n + 1);
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 403) {
+        throw err;
+      }
       toast({
         variant: "destructive",
         title: "Deletion Failed",

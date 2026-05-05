@@ -43,7 +43,7 @@ You have access to the following tools:
 - update_ticket: update title, description or client info
 - find_users: search users by name (partial match). Use this before reassigning when the user gives a name, not an email.
 - reassign_ticket: reassign a ticket to another user by their email
-- delete_ticket: request deletion of a ticket. Call this tool immediately when the user asks to delete a ticket. The system will automatically show a confirmation dialog to the user — you do NOT need to ask for confirmation yourself.
+- delete_ticket: request deletion of a ticket. Call this tool immediately when the user asks to delete a ticket. If the user is the author, the system will show a confirmation dialog. If not, the system may offer to notify the author instead.
 - search_knowledge: search the internal knowledge base for documentation, guides, or context
 
 Guidelines:

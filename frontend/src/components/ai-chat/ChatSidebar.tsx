@@ -23,7 +23,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { X, Send, Bot, Loader2, Wrench, RotateCcw } from "lucide-react";
 import { useParams } from "next/navigation";
-import { useRouter } from "next/navigation";
 import { useSelectionStore } from "@/stores/useSelectionStore";
 import { ChatMessage } from "@/types";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -37,6 +36,7 @@ interface ChatSidebarProps {
 
 export function ChatSidebar({ onClose }: ChatSidebarProps) {
   type PendingDelete = { ticket_id: string; ticket_title: string };
+  type PendingDeleteRequest = { ticket_id: string; ticket_title: string };
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -48,8 +48,10 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
   ]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isRequestingDelete, setIsRequestingDelete] = useState(false);
   const [deleteQueue, setDeleteQueue] = useState<PendingDelete[]>([]);
-  const router = useRouter();
+  const [deleteRequestQueue, setDeleteRequestQueue] = useState<PendingDeleteRequest[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Thread ID logic
@@ -88,6 +90,7 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
   const currentTicketId = params?.id as string | undefined;
   const { selectedTicketIds } = useSelectionStore();
   const pendingDelete = deleteQueue[0] ?? null;
+  const pendingDeleteRequest = deleteRequestQueue[0] ?? null;
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -230,6 +233,25 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
                   ticket_title: ticketTitle,
                 },
               ]);
+            } else if (event.type === "deletion_request_offer" && event.ticket_id) {
+              const ticketId = event.ticket_id;
+              const ticketTitle = event.ticket_title ?? "this ticket";
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: crypto.randomUUID(),
+                  role: "assistant",
+                  content: `You cannot delete "${ticketTitle}" because only the author can delete it. Would you like me to notify the author for you?`,
+                  created_at: new Date().toISOString(),
+                },
+              ]);
+              setDeleteRequestQueue((prev) => [
+                ...prev,
+                {
+                  ticket_id: ticketId,
+                  ticket_title: ticketTitle,
+                },
+              ]);
             } else if (event.type === "done") {
               break;
             }
@@ -261,11 +283,12 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
    * Calls the REST DELETE endpoint directly — the AI never touches this path.
    */
   const handleConfirmDelete = async () => {
-    if (!pendingDelete) return;
+    if (!pendingDelete || isDeleting) return;
     const { ticket_id, ticket_title } = pendingDelete;
-    setDeleteQueue((prev) => prev.slice(1));
+    setIsDeleting(true);
     try {
       await api.delete(`/tickets/${ticket_id}`);
+      setDeleteQueue((prev) => prev.slice(1));
       // Add a system message confirming the deletion
       setMessages((prev) => [
         ...prev,
@@ -276,22 +299,77 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
           created_at: new Date().toISOString(),
         },
       ]);
-      router.refresh();
-    } catch {
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        "Please try again.";
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 403) {
+        setDeleteQueue((prev) => prev.slice(1));
+        setDeleteRequestQueue((prev) => [
+          ...prev,
+          {
+            ticket_id,
+            ticket_title,
+          },
+        ]);
+      }
       setMessages((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
           role: "assistant",
-          content: `❌ Could not delete ticket "${ticket_title}". Please try again.`,
+          content: `❌ Could not delete ticket "${ticket_title}". ${detail}`,
           created_at: new Date().toISOString(),
         },
       ]);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
   const handleCancelDelete = () => {
+    if (isDeleting) return;
     setDeleteQueue((prev) => prev.slice(1));
+  };
+
+  const handleConfirmDeleteRequest = async () => {
+    if (!pendingDeleteRequest || isRequestingDelete) return;
+    const { ticket_id, ticket_title } = pendingDeleteRequest;
+    setIsRequestingDelete(true);
+    try {
+      await api.post(`/tickets/${ticket_id}/deletion-request`);
+      setDeleteRequestQueue((prev) => prev.slice(1));
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: `📨 I notified the author and asked them to delete "${ticket_title}".`,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        "Please try again.";
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: `❌ Could not send a deletion request for "${ticket_title}". ${detail}`,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+    } finally {
+      setIsRequestingDelete(false);
+    }
+  };
+
+  const handleCancelDeleteRequest = () => {
+    if (isRequestingDelete) return;
+    setDeleteRequestQueue((prev) => prev.slice(1));
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -424,6 +502,14 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
         confirmLabel="Delete ticket"
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelDelete}
+      />
+      <ConfirmDialog
+        open={!pendingDelete && !!pendingDeleteRequest}
+        title="Only the author can delete this ticket"
+        description={`You do not have permission to delete "${pendingDeleteRequest?.ticket_title}". Do you want to notify the author and ask them to delete it?`}
+        confirmLabel="Send request"
+        onConfirm={handleConfirmDeleteRequest}
+        onCancel={handleCancelDeleteRequest}
       />
     </>
   );

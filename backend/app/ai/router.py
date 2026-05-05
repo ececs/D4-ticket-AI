@@ -105,6 +105,11 @@ async def _agent_sse_stream(agent, initial_state, config: dict, thread_id: str):
                     t_id = parts[1] if len(parts) > 1 else ""
                     t_title = parts[2] if len(parts) > 2 else "este ticket"
                     yield f"data: {json.dumps({'type': 'confirmation_required', 'ticket_id': t_id, 'ticket_title': t_title})}\n\n"
+                elif tool_output.startswith("__DELETE_REQUEST_OFFER__:"):
+                    parts = tool_output.split(":", 2)
+                    t_id = parts[1] if len(parts) > 1 else ""
+                    t_title = parts[2] if len(parts) > 2 else "este ticket"
+                    yield f"data: {json.dumps({'type': 'deletion_request_offer', 'ticket_id': t_id, 'ticket_title': t_title})}\n\n"
                 else:
                     yield f"data: {json.dumps({'type': 'tool_call', 'name': tool_name, 'result': tool_output})}\n\n"
 

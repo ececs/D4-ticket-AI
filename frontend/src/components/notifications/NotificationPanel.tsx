@@ -22,6 +22,7 @@ const TYPE_ICONS: Record<string, string> = {
   status_changed: "🔄",
   ticket_updated: "📝",
   ticket_deleted: "🗑️",
+  deletion_requested: "📨",
 };
 
 interface NotificationPanelProps {
