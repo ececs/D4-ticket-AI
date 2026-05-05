@@ -344,7 +344,7 @@ def make_tools(db: AsyncSession, actor: User) -> List:
     @tool(args_schema=FindUsersSchema)
     async def find_users(name: str) -> str:
         """
-        Search for users by name (case-insensitive partial match).
+        Search for users by name (case and accent-insensitive partial match — 'lucia' matches 'Lucía').
         Use this before reassigning a ticket when the user provides a name instead of an email.
         Returns name + email for each match so you can confirm by full name first.
         """
