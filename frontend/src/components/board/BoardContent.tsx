@@ -41,18 +41,18 @@ export function BoardContent() {
   };
 
   return (
-    <div className="p-6">
+    <div className="px-3 py-4 sm:p-6">
       {/* Page header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Tickets</h1>
+          <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">Tickets</h1>
           <p className="text-slate-500 text-sm mt-0.5">
             Manage and track all work items
           </p>
         </div>
 
         {/* Controls: view toggle + new ticket */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           {/* Page size selector */}
           <select
             aria-label="Tickets por página"
@@ -60,7 +60,7 @@ export function BoardContent() {
             onChange={(e) =>
               setFilters({ ...filters, size: Number(e.target.value), page: 1 })
             }
-            className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-600"
+            className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:w-auto"
           >
             {[20, 50, 100].map((n) => (
               <option key={n} value={n}>{n} por página</option>
@@ -68,10 +68,10 @@ export function BoardContent() {
           </select>
 
           {/* List / Kanban toggle */}
-          <div className="flex items-center bg-slate-100 rounded-lg p-1 gap-0.5">
+          <div className="flex items-center rounded-lg bg-slate-100 p-1 gap-0.5">
             <button
               onClick={() => setView("list")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+              className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all sm:flex-none ${
                 view === "list"
                   ? "bg-white text-slate-800 shadow-sm"
                   : "text-slate-500 hover:text-slate-700"
@@ -82,7 +82,7 @@ export function BoardContent() {
             </button>
             <button
               onClick={() => setView("kanban")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+              className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all sm:flex-none ${
                 view === "kanban"
                   ? "bg-white text-slate-800 shadow-sm"
                   : "text-slate-500 hover:text-slate-700"
@@ -96,7 +96,7 @@ export function BoardContent() {
           {/* New ticket button */}
           <button
             onClick={() => setShowForm(true)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 active:bg-blue-800 transition-colors shadow-sm"
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 active:bg-blue-800 sm:w-auto"
           >
             <Plus className="w-4 h-4" />
             New ticket

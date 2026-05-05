@@ -381,7 +381,7 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
 
   return (
     <>
-    <div className="fixed bottom-4 right-4 w-[380px] h-[560px] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col z-[200] animate-in slide-in-from-bottom-4 fade-in">
+    <div className="fixed inset-x-3 bottom-28 top-4 z-[200] flex flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in slide-in-from-bottom-4 fade-in sm:inset-x-auto sm:top-auto sm:right-4 sm:bottom-4 sm:h-[560px] sm:w-[380px]">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 rounded-t-2xl bg-gradient-to-r from-blue-600 to-blue-500">
         <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center">

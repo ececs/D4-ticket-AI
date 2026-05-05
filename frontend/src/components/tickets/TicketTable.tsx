@@ -152,7 +152,7 @@ export function TicketTable({
           placeholder="Search tickets..."
           value={filters.search ?? ""}
           onChange={(e) => onFiltersChange({ ...filters, search: e.target.value, page: 1 })}
-          className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-52"
+          className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 sm:w-52"
         />
 
         {/* Status filter */}
@@ -162,7 +162,7 @@ export function TicketTable({
           onChange={(e) =>
             onFiltersChange({ ...filters, status: (e.target.value as TicketStatus) || undefined, page: 1 })
           }
-          className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-w-[10.5rem] flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 sm:min-w-0 sm:flex-none"
         >
           <option value="">All statuses</option>
           {STATUSES.map((s) => (
@@ -177,7 +177,7 @@ export function TicketTable({
           onChange={(e) =>
             onFiltersChange({ ...filters, priority: (e.target.value as TicketPriority) || undefined, page: 1 })
           }
-          className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-w-[10.5rem] flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 sm:min-w-0 sm:flex-none"
         >
           <option value="">All priorities</option>
           {PRIORITIES.map((p) => (
@@ -193,7 +193,7 @@ export function TicketTable({
             onChange={(e) =>
               onFiltersChange({ ...filters, assignee_id: e.target.value || undefined, page: 1 })
             }
-            className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="min-w-[10.5rem] flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 sm:min-w-0 sm:flex-none"
           >
             <option value="">All assignees</option>
             {users.map((u) => (
@@ -202,11 +202,11 @@ export function TicketTable({
           </select>
         )}
 
-        <span className="ml-auto text-sm text-slate-400">{total} ticket{total !== 1 ? "s" : ""}</span>
+        <span className="text-sm text-slate-400 sm:ml-auto">{total} ticket{total !== 1 ? "s" : ""}</span>
         {hasActiveFilters && (
           <button
             onClick={() => onFiltersChange({ page: 1 })}
-            className="text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+            className="text-xs text-blue-600 transition-colors hover:text-blue-800 hover:underline"
           >
             Clear filters
           </button>
