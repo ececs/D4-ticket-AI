@@ -67,7 +67,7 @@ async def _create_notification(
     db: AsyncSession,
     user_id: uuid.UUID,
     notification_type: NotificationType,
-    ticket_id: uuid.UUID,
+    ticket_id: uuid.UUID | None,
     message: str,
 ) -> Notification:
     """
@@ -77,7 +77,7 @@ async def _create_notification(
         db: Database session (caller is responsible for commit).
         user_id: The user who should receive this notification.
         notification_type: The kind of event that triggered it.
-        ticket_id: The related ticket (for click-through in the UI).
+        ticket_id: The related ticket (for click-through in the UI), if any.
         message: Human-readable description shown in the notifications panel.
 
     Returns:

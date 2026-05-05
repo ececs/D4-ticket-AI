@@ -68,6 +68,9 @@ export function TicketTable({
   };
 
   const { selectedTicketIds, toggleTicket, setSelection } = useSelectionStore();
+  const hasActiveFilters = Boolean(
+    filters.search || filters.status || filters.priority || filters.assignee_id
+  );
 
   const handleSelectAll = () => {
     if (selectedTicketIds.length === tickets.length && tickets.length > 0) {
@@ -166,6 +169,14 @@ export function TicketTable({
         )}
 
         <span className="ml-auto text-sm text-slate-400">{total} ticket{total !== 1 ? "s" : ""}</span>
+        {hasActiveFilters && (
+          <button
+            onClick={() => onFiltersChange({ page: 1 })}
+            className="text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       {/* Table */}
@@ -217,7 +228,7 @@ export function TicketTable({
               <tr>
                 <td colSpan={7} className="px-4 py-14 text-center">
                   <div className="flex flex-col items-center gap-3">
-                    {(filters.search || filters.status || filters.priority) ? (
+                    {hasActiveFilters ? (
                       <>
                         <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center">
                           <SearchX className="w-6 h-6 text-slate-400" />
@@ -227,7 +238,7 @@ export function TicketTable({
                           <p className="text-xs text-slate-400 mt-0.5">Try adjusting your search or clearing the filters</p>
                         </div>
                         <button
-                          onClick={() => onFiltersChange({})}
+                          onClick={() => onFiltersChange({ page: 1 })}
                           className="text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors"
                         >
                           Clear all filters

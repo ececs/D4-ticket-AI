@@ -6,6 +6,8 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import Notification, NotificationType
+from app.schemas.websocket import WSMessageType
+from app.services import notification_service
 from app.models.user import User
 
 
@@ -175,6 +177,37 @@ async def test_delete_notification_broadcasts_sync_event(
     mock_publish.assert_awaited_once()
 
 
+async def test_delete_notification_commits_after_pg_notify_fallback(
+    db_session: AsyncSession,
+    test_user: User,
+):
+    notification = Notification(
+        user_id=test_user.id,
+        type=NotificationType.status_changed,
+        ticket_id=None,
+        message="Needs deletion sync",
+    )
+    db_session.add(notification)
+    await db_session.commit()
+
+    original_commit = db_session.commit
+    db_session.commit = AsyncMock(wraps=original_commit)  # type: ignore[method-assign]
+
+    with (
+        patch("app.services.notification_service.pubsub_service.is_redis_available", return_value=False),
+        patch("app.services.notification_service._pg_notify", new_callable=AsyncMock) as mock_pg_notify,
+    ):
+        ok = await notification_service.delete_notification(
+            db_session,
+            notification_id=notification.id,
+            user_id=test_user.id,
+        )
+
+    assert ok is True
+    mock_pg_notify.assert_awaited_once()
+    assert db_session.commit.await_count == 2
+
+
 async def test_mark_all_notifications_read(client: AsyncClient):
     ticket = await _create_ticket(client)
     await client.patch(f"/api/v1/tickets/{ticket['id']}", json={"status": "in_progress"})
@@ -202,6 +235,48 @@ async def test_mark_all_notifications_broadcasts_sync_event(
 
     assert response.status_code == 200
     mock_broadcast.assert_awaited_once()
+
+
+async def test_broadcast_notifications_read_all_commits_after_pg_notify_fallback(
+    db_session: AsyncSession,
+    test_user: User,
+):
+    original_commit = db_session.commit
+    db_session.commit = AsyncMock(wraps=original_commit)  # type: ignore[method-assign]
+
+    with (
+        patch("app.services.notification_service.pubsub_service.is_redis_available", return_value=False),
+        patch("app.services.notification_service._pg_notify", new_callable=AsyncMock) as mock_pg_notify,
+    ):
+        await notification_service.broadcast_notifications_read_all(
+            db_session,
+            user_id=test_user.id,
+            unread_count=0,
+        )
+
+    mock_pg_notify.assert_awaited_once()
+    db_session.commit.assert_awaited_once()
+
+
+async def test_ticket_deleted_notification_payload_keeps_ticket_id_none(
+    db_session: AsyncSession,
+    test_user: User,
+):
+    with patch(
+        "app.services.notification_service._publish_user_event",
+        new_callable=AsyncMock,
+    ) as mock_publish:
+        await notification_service.notify_ticket_deleted(
+            db_session,
+            ticket_id=uuid.uuid4(),
+            ticket_title="Deleted ticket",
+            actor=test_user,
+        )
+
+    ws_msg = mock_publish.await_args.args[2]
+    assert ws_msg.type == WSMessageType.NOTIFICATION
+    assert ws_msg.ticket_id is None
+    assert ws_msg.data["ticket_id"] is None
 
 
 async def test_mark_all_read_then_new_notification_is_unread_again(client: AsyncClient):
