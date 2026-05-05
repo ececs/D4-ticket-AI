@@ -707,7 +707,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs font-semibold text-slate-700">{c.author?.name ?? "Unknown"}</span>
-                      <span className="text-xs text-slate-400">{timeAgo(c.created_at)}</span>
+                      <span className="text-xs text-slate-400">{formatDateTime(c.created_at)}</span>
                     </div>
                     <p className="text-sm text-slate-600 whitespace-pre-wrap">{c.content}</p>
                   </div>

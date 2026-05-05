@@ -113,6 +113,7 @@ export function BoardContent() {
           onFiltersChange={setFilters}
           onDeleteTicket={deleteTicket}
           isLoading={isLoading}
+          users={users}
         />
       ) : (
         <>

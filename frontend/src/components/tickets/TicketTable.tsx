@@ -15,7 +15,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Ticket, TicketFilters, TicketPriority, TicketStatus } from "@/types";
+import { Ticket, TicketFilters, TicketPriority, TicketStatus, User } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -36,6 +36,7 @@ interface TicketTableProps {
   onFiltersChange: (filters: TicketFilters) => void;
   onDeleteTicket: (id: string) => Promise<void>;
   isLoading: boolean;
+  users?: User[];
 }
 
 function SortIcon({ field, sortBy, sortDir }: { field: SortField; sortBy: SortField | undefined; sortDir: SortDir }) {
@@ -52,6 +53,7 @@ export function TicketTable({
   onFiltersChange,
   onDeleteTicket,
   isLoading,
+  users = [],
 }: TicketTableProps) {
   const router = useRouter();
   const [sortBy, setSortBy] = useState<SortField | undefined>(undefined);
@@ -145,6 +147,23 @@ export function TicketTable({
             <option key={p} value={p}>{PRIORITY_CONFIG[p].label}</option>
           ))}
         </select>
+
+        {/* Assignee filter */}
+        {users.length > 0 && (
+          <select
+            aria-label="Filtrar por asignado"
+            value={filters.assignee_id ?? ""}
+            onChange={(e) =>
+              onFiltersChange({ ...filters, assignee_id: e.target.value || undefined, page: 1 })
+            }
+            className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">All assignees</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>{u.name}</option>
+            ))}
+          </select>
+        )}
 
         <span className="ml-auto text-sm text-slate-400">{total} ticket{total !== 1 ? "s" : ""}</span>
       </div>
