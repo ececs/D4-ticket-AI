@@ -43,5 +43,6 @@ docs_private/
 
 # AI Assistant Settings
 .claude/
+.claude
 
 *.tsbuildinfo
