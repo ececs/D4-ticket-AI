@@ -107,7 +107,7 @@ async def _create_notification(
             "id": str(notification.id),
             "user_id": str(user_id),
             "type": notification_type.value,
-            "ticket_id": str(ticket_id),
+            "ticket_id": str(ticket_id) if ticket_id else None,
             "message": message,
             "read": notification.read,
             "created_at": notification.created_at.isoformat(),
@@ -399,6 +399,7 @@ async def delete_notification(
         },
     )
     await _publish_user_event(db, user_id, ws_msg)
+    await db.commit()  # flush PG NOTIFY when Redis is unavailable
     return True
 
 
@@ -427,6 +428,7 @@ async def broadcast_notifications_read_all(
         data={"unread_count": unread_count},
     )
     await _publish_user_event(db, user_id, ws_msg)
+    await db.commit()  # flush PG NOTIFY when Redis is unavailable
 
 
 async def get_unread_count(db: AsyncSession, user_id: uuid.UUID) -> int:
