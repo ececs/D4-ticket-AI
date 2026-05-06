@@ -132,4 +132,80 @@ describe("notificationStore", () => {
     expect(state.notifications[0].read).toBe(true);
     expect(state.unreadCount).toBe(0);
   });
+
+  it("markAllAsRead marks all notifications as read and zeroes the badge", async () => {
+    useNotificationStore.setState({
+      notifications: [
+        makeNotification({ id: "n-1", read: false }),
+        makeNotification({ id: "n-2", read: false }),
+      ],
+      unreadCount: 2,
+    });
+
+    await useNotificationStore.getState().markAllAsRead();
+    const state = useNotificationStore.getState();
+
+    expect(state.notifications.every((n) => n.read)).toBe(true);
+    expect(state.unreadCount).toBe(0);
+  });
+
+  it("syncRemoveNotification removes a notification and derives unread count", () => {
+    useNotificationStore.setState({
+      notifications: [
+        makeNotification({ id: "n-1", read: false }),
+        makeNotification({ id: "n-2", read: true }),
+      ],
+      unreadCount: 1,
+    });
+
+    useNotificationStore.getState().syncRemoveNotification("n-1");
+    const state = useNotificationStore.getState();
+
+    expect(state.notifications.map((n) => n.id)).toEqual(["n-2"]);
+    expect(state.unreadCount).toBe(0);
+  });
+
+  it("syncRemoveNotification trusts server unread count when provided", () => {
+    useNotificationStore.setState({
+      notifications: [
+        makeNotification({ id: "n-1", read: false }),
+        makeNotification({ id: "n-2", read: false }),
+      ],
+      unreadCount: 2,
+    });
+
+    useNotificationStore.getState().syncRemoveNotification("n-1", 5);
+    const state = useNotificationStore.getState();
+
+    expect(state.unreadCount).toBe(5);
+  });
+
+  it("syncMarkOneRead uses server count over local derivation when provided", () => {
+    useNotificationStore.setState({
+      notifications: [
+        makeNotification({ id: "n-1", read: false }),
+        makeNotification({ id: "n-2", read: false }),
+      ],
+      unreadCount: 2,
+    });
+
+    useNotificationStore.getState().syncMarkOneRead("n-1", 7);
+    const state = useNotificationStore.getState();
+
+    expect(state.notifications.find((n) => n.id === "n-1")?.read).toBe(true);
+    expect(state.unreadCount).toBe(7);
+  });
+
+  it("syncMarkAllAsRead uses server count when provided instead of hardcoding zero", () => {
+    useNotificationStore.setState({
+      notifications: [makeNotification({ id: "n-1", read: false })],
+      unreadCount: 1,
+    });
+
+    useNotificationStore.getState().syncMarkAllAsRead(0);
+    const state = useNotificationStore.getState();
+
+    expect(state.notifications.every((n) => n.read)).toBe(true);
+    expect(state.unreadCount).toBe(0);
+  });
 });

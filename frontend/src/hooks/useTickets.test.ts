@@ -167,4 +167,42 @@ describe("useTickets", () => {
     expect(result.current.tickets.map((ticket) => ticket.id)).toEqual(["ticket-1", "ticket-2"]);
     expect(result.current.total).toBe(2);
   });
+
+  it("sets error state when the initial fetch fails", async () => {
+    vi.mocked(api.get).mockRejectedValueOnce({
+      response: { data: { detail: "Unauthorized" } },
+    });
+
+    const { result } = renderHook(() => useTickets());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.error).toBe("Unauthorized");
+    expect(result.current.tickets).toHaveLength(0);
+  });
+
+  it("updateTicket patches the API and reflects the new data in the local list", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({
+      data: {
+        items: [makeTicket({ id: "ticket-1", title: "Original" })],
+        total: 1,
+        page: 1,
+        size: 20,
+      },
+    });
+    vi.mocked(api.patch).mockResolvedValueOnce({
+      data: makeTicket({ id: "ticket-1", title: "Updated title" }),
+    });
+
+    const { result } = renderHook(() => useTickets());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    let updated: Awaited<ReturnType<typeof result.current.updateTicket>>;
+    await act(async () => {
+      updated = await result.current.updateTicket("ticket-1", { title: "Updated title" });
+    });
+
+    expect(updated!.title).toBe("Updated title");
+    expect(result.current.tickets[0].title).toBe("Updated title");
+    expect(api.patch).toHaveBeenCalledWith("/tickets/ticket-1", { title: "Updated title" });
+  });
 });

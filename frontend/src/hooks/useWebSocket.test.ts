@@ -148,4 +148,116 @@ describe("useWebSocket", () => {
 
     expect(FakeWebSocket.instances).toHaveLength(2);
   });
+
+  it("ticket_created without an id falls back to a global refresh signal", () => {
+    renderHook(() => useWebSocket("jwt-123"));
+    const socket = FakeWebSocket.instances[0];
+
+    act(() => {
+      socket.onmessage?.({
+        data: JSON.stringify({ type: "ticket_created" }),
+      } as MessageEvent<string>);
+    });
+
+    expect(storeActions.triggerRefresh).toHaveBeenCalledWith("*");
+  });
+
+  it("TICKET_DELETED uppercase alias is handled for backwards compatibility", () => {
+    renderHook(() => useWebSocket("jwt-123"));
+    const socket = FakeWebSocket.instances[0];
+
+    act(() => {
+      socket.onmessage?.({
+        data: JSON.stringify({ type: "TICKET_DELETED", data: { id: "ticket-5" } }),
+      } as MessageEvent<string>);
+    });
+
+    expect(storeActions.triggerDelete).toHaveBeenCalledWith("ticket-5");
+  });
+
+  it("ticket_updated falls back to data.id when ticket_id is absent", () => {
+    renderHook(() => useWebSocket("jwt-123"));
+    const socket = FakeWebSocket.instances[0];
+
+    act(() => {
+      socket.onmessage?.({
+        data: JSON.stringify({ type: "ticket_updated", data: { id: "ticket-7" } }),
+      } as MessageEvent<string>);
+    });
+
+    expect(storeActions.triggerRefresh).toHaveBeenCalledWith("ticket-7");
+  });
+
+  it("ping messages are silently ignored without dispatching any store action", () => {
+    renderHook(() => useWebSocket("jwt-123"));
+    const socket = FakeWebSocket.instances[0];
+
+    act(() => {
+      socket.onmessage?.({
+        data: JSON.stringify({ type: "ping" }),
+      } as MessageEvent<string>);
+    });
+
+    Object.values(storeActions).forEach((fn) => {
+      expect(fn).not.toHaveBeenCalled();
+    });
+  });
+
+  it("does not reconnect on a clean close with code 1000", () => {
+    renderHook(() => useWebSocket("jwt-123"));
+    const socket = FakeWebSocket.instances[0];
+
+    act(() => {
+      socket.onclose?.({ code: 1000, reason: "Normal closure" } as CloseEvent);
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it("onerror closes the socket and then onclose triggers reconnect", () => {
+    renderHook(() => useWebSocket("jwt-123"));
+    const socket = FakeWebSocket.instances[0];
+
+    act(() => {
+      socket.onerror?.();
+      // FakeWebSocket.close is a mock, so manually fire onclose to simulate real behavior
+      socket.onclose?.({ code: 1006, reason: "error" } as CloseEvent);
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(socket.close).toHaveBeenCalled();
+    expect(FakeWebSocket.instances).toHaveLength(2);
+  });
+
+  it("system_alert with a non-handshake message shows a toast", () => {
+    renderHook(() => useWebSocket("jwt-123"));
+    const socket = FakeWebSocket.instances[0];
+
+    act(() => {
+      socket.onmessage?.({
+        data: JSON.stringify({
+          type: "system_alert",
+          data: { unread_count: 2 },
+          message: "Mantenimiento programado en 10 minutos",
+        }),
+      } as MessageEvent<string>);
+    });
+
+    expect(storeActions.syncUnreadCount).toHaveBeenCalledWith(2);
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Aviso del Sistema" }),
+    );
+  });
+
+  it("closes the socket cleanly on unmount without triggering reconnect", () => {
+    const { unmount } = renderHook(() => useWebSocket("jwt-123"));
+    const socket = FakeWebSocket.instances[0];
+
+    unmount();
+    vi.advanceTimersByTime(3000);
+
+    expect(socket.close).toHaveBeenCalledWith(1000, "Component unmounted");
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
 });
