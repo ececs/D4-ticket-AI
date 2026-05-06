@@ -20,7 +20,7 @@ import uuid
 import logging
 import asyncio
 import unicodedata
-from typing import Optional, List, Type
+from typing import Optional, List
 from pydantic import BaseModel, Field
 
 from langchain_core.tools import tool
@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ticket import Ticket, TicketStatus, TicketPriority
 from app.models.user import User
-from app.models.comment import Comment
+
 from app.services import ticket_service, notification_service, knowledge_service, comment_service, scraping_service, history_service
 
 logger = logging.getLogger(__name__)
