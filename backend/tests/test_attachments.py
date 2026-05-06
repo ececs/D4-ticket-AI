@@ -9,6 +9,7 @@ Orbidi spec requirement:
 
 import io
 import uuid
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -228,3 +229,28 @@ async def test_delete_attachment_without_auth_returns_401(unauth_client: AsyncCl
         f"/api/v1/tickets/{uuid.uuid4()}/attachments/{uuid.uuid4()}"
     )
     assert r.status_code == 401
+
+
+async def test_delete_attachment_keeps_db_consistent_when_storage_cleanup_fails(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    mock_storage,
+):
+    ticket = await _create_ticket(client)
+    attachment = (
+        await client.post(
+            f"/api/v1/tickets/{ticket['id']}/attachments",
+            files=_make_file(b"data", "cleanup_fail.png", "image/png"),
+        )
+    ).json()
+
+    with patch.object(storage_service, "delete_file", new_callable=AsyncMock) as mock_delete:
+        mock_delete.side_effect = RuntimeError("storage unavailable")
+
+        r = await client.delete(f"/api/v1/tickets/{ticket['id']}/attachments/{attachment['id']}")
+
+    assert r.status_code == 204
+    mock_delete.assert_awaited_once()
+
+    remaining = await db_session.get(Attachment, uuid.UUID(attachment["id"]))
+    assert remaining is None

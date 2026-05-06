@@ -127,13 +127,14 @@ async def delete_attachment(
     if not attachment or attachment.uploader_id != actor_id:
         return False
 
-    # Delete from storage first
+    # Delete DB metadata first. If storage cleanup fails afterwards, the user
+    # still gets a consistent application state and the leftover object can be
+    # cleaned up later.
+    await db.delete(attachment)
+    await db.commit()
+
     try:
         await storage_service.delete_file(attachment.storage_key)
     except Exception:
         pass
-
-    # Clean up DB
-    await db.delete(attachment)
-    await db.commit()
     return True
