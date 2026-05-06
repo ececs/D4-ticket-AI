@@ -467,6 +467,20 @@ npm run type-check
 npm run build
 ```
 
+Tests unitarios con Vitest (43 casos):
+
+```bash
+cd frontend
+npx vitest run
+```
+
+La batería cubre cuatro módulos:
+
+- **`ticketRealtime`** — lógica pura de inserción en tiempo real: filtros activos (status, priority, assignee_id), ordenación por campo y dirección, refetch cuando hay búsqueda o página > 1, truncado por tamaño de página con totalDelta correcto.
+- **`notificationStore`** — store Zustand: deduplicación, addNotification, syncMarkOneRead/All (con y sin server count), syncRemoveNotification, triggerRefresh/Delete, markAsRead y markAllAsRead optimistas.
+- **`useTickets`** — hook de datos: carga inicial, error state, update parcial por WS, fast-path de borrado, refetch por señal global, rollback optimista en status y delete, updateTicket.
+- **`useWebSocket`** — ciclo de vida del socket: conexión con token, eventos ticket_created/updated/deleted (incluyendo alias y fallbacks), notification/read/deleted/read_all, web_scrape_completed, ping ignorado, reconexión tras cierre anormal, no reconexión en cierre limpio, onerror, limpieza en unmount.
+
 ## Estado actual del asistente IA
 
 El asistente es una mejora funcional real del sistema, no solo una demo textual.
