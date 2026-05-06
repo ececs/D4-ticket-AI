@@ -165,7 +165,8 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
       const decoder = new TextDecoder();
       let buffer = "";
 
-      while (true) {
+      // Labeled outer loop so the "done" event can exit both the for and the while.
+      outer: while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -253,7 +254,7 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
                 },
               ]);
             } else if (event.type === "done") {
-              break;
+              break outer;
             }
           } catch {
             // Ignore malformed SSE events

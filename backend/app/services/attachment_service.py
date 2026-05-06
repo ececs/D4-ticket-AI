@@ -78,7 +78,7 @@ async def create_attachment(
         mime_type=mime_type,
     )
 
-    # 3. Save metadata
+    # 3. Save metadata — if the DB commit fails, clean up the orphaned file
     attachment = Attachment(
         ticket_id=ticket_id,
         uploader_id=uploader_id,
@@ -88,8 +88,15 @@ async def create_attachment(
         mime_type=mime_type,
     )
     db.add(attachment)
-    await db.commit()
-    await db.refresh(attachment)
+    try:
+        await db.commit()
+        await db.refresh(attachment)
+    except Exception:
+        try:
+            await storage_service.delete_file(storage_key)
+        except Exception:
+            pass
+        raise
 
     # 4. Generate immediate URL
     download_url = await storage_service.get_presigned_url(storage_key)
