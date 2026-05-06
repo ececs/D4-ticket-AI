@@ -25,4 +25,6 @@ EXPOSE 8000
 
 # Run migrations then start the server.
 # alembic upgrade head is idempotent — safe to run on every container start.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# exec 2>&1 redirects stderr to stdout so Railway classifies all logs as info,
+# not as errors (uvicorn and alembic write to stderr by default).
+CMD ["sh", "-c", "exec 2>&1; alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
