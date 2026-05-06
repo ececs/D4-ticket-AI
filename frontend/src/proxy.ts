@@ -1,15 +1,14 @@
 /**
- * Next.js middleware — route protection.
+ * Next.js proxy — route protection.
  *
- * Next.js middleware runs on the Edge Runtime before every request.
- * It's ideal for auth guards because it executes before the page renders,
- * preventing a flash of unauthenticated content.
+ * In Next.js 16, the old middleware convention was renamed to proxy.
+ * We keep the same auth-guard behavior while following the current API.
  *
  * Strategy:
  *  - Public routes (login, OAuth callback): accessible without a token.
  *  - All other routes: require the access_token cookie.
- *  - If the cookie is missing → redirect to /login.
- *  - If on /login with a valid token → redirect to /board (already logged in).
+ *  - If the cookie is missing -> redirect to /login.
+ *  - If on /login with a valid token -> redirect to /board.
  *
  * Note: We only check for the cookie's existence here (fast, no DB query).
  * The actual token validity is verified by FastAPI on every API call.
@@ -18,24 +17,21 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-// Routes that don't require authentication
 const PUBLIC_PATHS = ["/login", "/api/auth", "/_next"];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const token = request.cookies.get("access_token")?.value;
 
   const isPublicPath = PUBLIC_PATHS.some((path) => pathname.startsWith(path));
 
   if (!isPublicPath && !token) {
-    // No token → redirect to login, preserving the intended destination
     const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("next", pathname); // e.g., ?next=/board
+    loginUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
   if (pathname === "/login" && token) {
-    // Already authenticated → redirect away from login
     return NextResponse.redirect(new URL("/board", request.url));
   }
 
@@ -43,6 +39,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Apply middleware to all routes except Next.js internals and static files
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
