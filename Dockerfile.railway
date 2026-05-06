@@ -10,11 +10,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip install uv
 
-COPY backend/pyproject.toml .
+COPY pyproject.toml .
 
 RUN uv pip install --system -e .
 
-COPY backend/ .
+COPY . .
 
 EXPOSE 8000
 
