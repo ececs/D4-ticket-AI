@@ -509,7 +509,7 @@ Además:
 
 - La confirmación de acciones sensibles se resuelve en frontend, no con `interrupt/resume` persistente del grafo.
 - El identificador visible del ticket es un fragmento de UUID, no un contador secuencial.
-- El estado del frontend usa hooks y Zustand ligeros en vez de React Query para mantener el proyecto más fácil de explicar y defender en entrevista.
+- **Zustand + React Hooks frente a React Query:** Se optó deliberadamente por un estado del cliente basado en Zustand y hooks personalizados en lugar de React Query. Dado que el sistema utiliza **sincronización en tiempo real vía WebSockets con actualizaciones optimistas**, un almacén de estado ligero como Zustand permite manipular quirúrgicamente el estado de la UI (inserciones, modificaciones y borrados reactivos) ante eventos entrantes del WebSocket, evitando los bucles de revalidación redundantes en segundo plano y el overhead de red propios de las políticas de caché por defecto de React Query.
 - Algunas decisiones de UX y permisos son deliberadamente conservadoras para priorizar estabilidad y claridad en una prueba técnica de una semana.
 
 ## Uso de IA durante el desarrollo
