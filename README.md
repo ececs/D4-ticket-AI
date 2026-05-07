@@ -10,13 +10,9 @@ Repositorio creado específicamente para esta prueba.
 Hay dos formas de acceder:
 
 - **Google OAuth** — disponible para cuentas personales Gmail y para cuentas del dominio `@orbidi.com`.
-- **Modo demo** — acceso inmediato sin cuenta Google usando el código:
+- **Modo demo** — acceso rápido para evaluación, facilitado directamente por email al equipo de ORBIDI.
 
-  ```
-  Orbidi@2026Xdesafio
-  ```
-
-> **Nota sobre acceso:** Orbidi solicitó que en entorno local cualquier cuenta Google pueda registrarse y acceder, y así funciona (configurando `ALLOWED_EMAILS=["*"]` para acceso abierto). En la demo desplegada en producción se restringió el acceso por seguridad para evitar registros no deseados en la instancia pública. Para facilitar la revisión, se incluye temporalmente un modo demo con código de acceso. Si necesitáis acceder con otra cuenta, puedo añadirla sin problema.
+> **Nota sobre acceso:** Orbidi solicitó que en entorno local cualquier cuenta Google pueda registrarse y acceder, y así funciona (configurando `ALLOWED_EMAILS=["*"]` para acceso abierto). En la demo desplegada en producción se restringió el acceso por seguridad para evitar registros no deseados en la instancia pública. El acceso demo se ha facilitado directamente por email al equipo de ORBIDI. Si fuese necesario volver a compartirlo, puedo proporcionarlo de nuevo sin problema.
 
 Incluye:
 
