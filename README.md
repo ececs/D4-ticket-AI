@@ -247,14 +247,6 @@ El backend aplica automáticamente las migraciones de base de datos (`alembic up
 4. Verificar que aparece en lista y Kanban
 5. Abrir [http://localhost:8000/docs](http://localhost:8000/docs) para comprobar que la API está operativa
 
-#### Datos de prueba (opcional)
-
-Para poblar la instancia con tickets realistas sin crearlos manualmente, hay un script en `docs_private/seed_data.py` que crea 12 tickets con distintos estados, prioridades y asignaciones. Está pensado para la demo en producción pero funciona igual en local apuntando a `http://localhost:8000/api/v1`. Requiere un token JWT válido (se obtiene de la cookie `access_token` tras iniciar sesión).
-
-```bash
-TOKEN=<tu_token> python3 docs_private/seed_data.py
-```
-
 ### Opción B: Ejecución manual
 
 #### Requisitos
